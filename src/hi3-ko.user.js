@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.2.0
+// @version      0.2.1
 // @description  silvermu.top 붕괴3rd 데이터베이스의 비공식 한국어 번역 레이어 + 미번역/리소스 진단 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
-// @run-at       document-start
+// @run-at       document-idle
 // @grant        GM_registerMenuCommand
 // @grant        GM_setClipboard
 // @license      MIT
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.2.1';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -345,9 +345,7 @@
     document.documentElement.appendChild(badge);
   }
 
-  function start() {
-    if (!enabled()) return;
-
+  function activateTranslation() {
     const root = document.documentElement || document;
     translateTree(root);
 
@@ -367,15 +365,17 @@
       attributeFilter: ATTRS,
     });
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        translateTree(document.body);
-        addBadge();
-      }, { once: true });
-    } else {
-      translateTree(document.body);
-      addBadge();
-    }
+    addBadge();
+  }
+
+  function start() {
+    if (!enabled()) return;
+
+    // 원본 앱 초기화와 충돌하지 않도록 페이지 로드 이후에 번역 레이어를 시작한다.
+    const boot = () => window.setTimeout(activateTranslation, 800);
+
+    if (document.readyState === 'complete') boot();
+    else window.addEventListener('load', boot, { once: true });
   }
 
   if (typeof GM_registerMenuCommand === 'function') {
