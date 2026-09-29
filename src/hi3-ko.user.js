@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.7.0
+// @version      0.7.1
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.7.0';
+  const VERSION = '0.7.1';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -787,6 +787,34 @@
     }
   }
 
+  async function cachePutMany(entries, method = 'chrome-ai') {
+    const clean = entries.filter((entry) =>
+      entry?.source && entry?.translated && entry.source !== entry.translated
+    );
+    if (!clean.length) return;
+
+    try {
+      const db = await openCacheDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readwrite');
+        const store = tx.objectStore(CACHE_STORE);
+        const now = new Date().toISOString();
+        for (const entry of clean) {
+          store.put({
+            source: entry.source,
+            translated: entry.translated,
+            method: entry.method || method,
+            updatedAt: now,
+          });
+        }
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (error) {
+      console.warn('[silvermu-hi3-ko] bulk cache write failed', error);
+    }
+  }
+
   async function cacheGetAll() {
     try {
       const db = await openCacheDb();
@@ -1225,7 +1253,7 @@
 
     const protectedItems = items.map((source) => protectKnownNames(source));
     const marked = protectedItems.map((item, i) => '[[HI3SEG' + i + ']]\n' + item.text).join('\n');
-    if (marked.length > 12000 || items.length === 1) {
+    if (marked.length > 28000 || items.length === 1) {
       const out = [];
       for (let i = 0; i < items.length; i++) {
         out.push(await translateWithAi(items[i]));
@@ -1274,61 +1302,121 @@
       await ensureTranslator();
       const datasets = await fetchDatasetStrings();
       const all = [...new Set(Object.values(datasets).flat())];
+
+      // 기존 캐시를 한 번에 읽어 메모리 Map으로 사용한다.
+      // 문자열마다 IndexedDB transaction을 여는 방식보다 훨씬 빠르다.
+      setAiStatus('기존 번역 캐시 불러오는 중…', true);
+      const cacheRows = await cacheGetAll();
+      const cacheMap = new Map(cacheRows.map((row) => [row.source, row.translated]));
+
       const pending = [];
+      const staticWrites = [];
 
       for (const source of all) {
         const staticText = translateString(source);
         if (!HAN_RE.test(staticText)) {
-          await cachePut(source, staticText, 'static');
+          if (!cacheMap.has(source)) {
+            staticWrites.push({ source, translated: staticText, method: 'static' });
+            cacheMap.set(source, staticText);
+          }
           continue;
         }
-        const cached = await cacheGet(source);
+
+        const cached = cacheMap.get(source);
         if (!cached || HAN_RE.test(cached)) pending.push(source);
       }
 
-      let completed = all.length - pending.length;
-      setAiStatus('전체 DB 번역: ' + completed + '/' + all.length + ' · AI 번역 ' + pending.length + '개 대기', true);
+      // 정적 번역도 단일/소수 transaction으로 묶어서 저장.
+      const STATIC_CHUNK = 500;
+      for (let i = 0; i < staticWrites.length; i += STATIC_CHUNK) {
+        await cachePutMany(staticWrites.slice(i, i + STATIC_CHUNK), 'static');
+      }
 
-      let cursor = 0;
-      while (cursor < pending.length && !fullBuildCancelled) {
+      let completed = all.length - pending.length;
+      setAiStatus(
+        '전체 DB 번역: ' + completed + '/' + all.length +
+        ' · AI 번역 ' + pending.length + '개 대기',
+        true
+      );
+
+      // 이전 8개/7천자보다 큰 배치로 호출 횟수를 줄인다.
+      // 로컬 모델 메모리 폭주를 피하기 위해 병렬 worker는 2개만 사용.
+      const makeBatch = (state) => {
         const batch = [];
         let chars = 0;
-        while (cursor < pending.length && batch.length < 8) {
-          const value = pending[cursor];
-          if (batch.length && chars + value.length > 7000) break;
+
+        while (state.cursor < pending.length && batch.length < 20) {
+          const value = pending[state.cursor];
+          if (batch.length && chars + value.length > 16000) break;
           batch.push(value);
           chars += value.length;
-          cursor += 1;
+          state.cursor += 1;
         }
+        return batch;
+      };
 
-        const translated = await translateBatch(batch);
-        for (let i = 0; i < batch.length; i++) {
-          if (translated[i] && translated[i] !== batch[i]) {
-            await cachePut(batch[i], translated[i], 'chrome-ai');
+      const state = { cursor: 0 };
+
+      while (state.cursor < pending.length && !fullBuildCancelled) {
+        const batches = [];
+        for (let worker = 0; worker < 2 && state.cursor < pending.length; worker += 1) {
+          const batch = makeBatch(state);
+          if (batch.length) batches.push(batch);
+        }
+        if (!batches.length) break;
+
+        const results = await Promise.all(
+          batches.map(async (batch) => {
+            const translated = await translateBatch(batch);
+            return { batch, translated };
+          })
+        );
+
+        const writes = [];
+        let justCompleted = 0;
+
+        for (const result of results) {
+          for (let i = 0; i < result.batch.length; i += 1) {
+            const source = result.batch[i];
+            const translated = result.translated[i];
+            if (translated && translated !== source) {
+              writes.push({ source, translated, method: 'chrome-ai' });
+              cacheMap.set(source, translated);
+            }
           }
+          justCompleted += result.batch.length;
         }
 
-        completed += batch.length;
+        // 번역 결과 전체를 transaction 1개로 저장.
+        await cachePutMany(writes, 'chrome-ai');
+
+        completed += justCompleted;
         const pct = Math.round(completed / all.length * 100);
-        setAiStatus('전체 DB 번역 중… ' + completed + '/' + all.length + ' (' + pct + '%)', true);
+        setAiStatus(
+          '전체 DB 번역 중… ' + completed + '/' + all.length +
+          ' (' + pct + '%) · 묶음 저장',
+          true
+        );
+
+        // UI thread에 양보.
         await new Promise((resolve) => window.setTimeout(resolve, 0));
       }
 
       if (fullBuildCancelled) {
-        setAiStatus('전체 번역팩 생성 취소됨');
+        setAiStatus('전체 번역팩 생성 취소됨 · 완료분은 캐시에 보존됨');
         return;
       }
 
       const report = await exportTranslationPack(datasets);
       scanAiTargets(document);
-      setAiStatus('전체 DB 완료 · 커버리지 ' + report.total.coverage + '% · 파일 2개 저장됨');
+      setAiStatus('전체 DB 완료 · 커버리지 ' + report.total.coverage + '% · 파일 저장됨');
       window.alert(
         '전체 DB 번역/검사가 끝났습니다.\n' +
         '전체 고유 중국어 문자열: ' + report.total.strings + '개\n' +
         '번역 완료: ' + report.total.translated + '개\n' +
         '남음: ' + report.total.remaining + '개\n' +
         '커버리지: ' + report.total.coverage + '%\n\n' +
-        '다운로드된 translation-pack과 coverage JSON 두 파일을 ChatGPT에 올려 주세요.'
+        '다운로드된 hi3-ko-full-audit JSON 파일 1개를 ChatGPT에 올려 주세요.'
       );
     } catch (error) {
       console.error('[silvermu-hi3-ko] full build failed', error);
