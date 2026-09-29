@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.7.2
+// @version      0.7.3
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.7.2';
+  const VERSION = '0.7.3';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -1335,6 +1335,27 @@
     }
   }
 
+  async function exportFullAuditFromCache() {
+    setAiStatus('기존 캐시로 전체 감사 파일 생성 중…', true);
+    try {
+      const datasets = {};
+      for (const [name, path] of Object.entries(FULL_DATASETS)) {
+        datasets[name] = await fetchSingleDatasetStrings(name, path);
+      }
+      const report = await exportTranslationPack(datasets);
+      setAiStatus('감사 파일 저장 완료 · 커버리지 ' + report.total.coverage + '%');
+      window.alert(
+        '기존 번역 캐시를 사용해 감사 파일을 다시 만들었습니다.\n\n' +
+        '파일명: hi3-ko-full-audit-' + VERSION + '.json\n' +
+        '커버리지: ' + report.total.coverage + '%'
+      );
+    } catch (error) {
+      console.error('[silvermu-hi3-ko] audit export failed', error);
+      setAiStatus('감사 파일 생성 실패: ' + (error?.message || error));
+      window.alert('감사 파일 생성에 실패했습니다.\n' + (error?.message || error));
+    }
+  }
+
   async function buildFullTranslationPack() {
     const API = getTranslatorApi();
     if (!API) {
@@ -1662,6 +1683,7 @@
       fullBuildCancelled = true;
       setAiStatus('전체 DB 번역 취소 요청됨');
     });
+    GM_registerMenuCommand('전수검사 JSON 다시 내보내기 (재번역 없음)', () => void exportFullAuditFromCache());
     GM_registerMenuCommand('현재 번역팩 내보내기', () => void exportTranslationPack());
     GM_registerMenuCommand('AI 번역 캐시 초기화', async () => {
       if (!window.confirm('저장된 AI 번역 캐시를 전부 지울까요?')) return;
