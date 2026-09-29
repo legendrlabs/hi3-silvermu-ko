@@ -1044,8 +1044,8 @@
     if (!btn) return;
     btn.textContent = aiEnabled ? 'AI✓' : 'AI';
     btn.title = aiEnabled
-      ? 'Chrome 로컬 AI 번역 켜짐 · 클릭하면 끄기'
-      : 'Chrome 로컬 AI로 남은 중국어 전부 번역';
+      ? 'Chrome 로컬 AI 번역 켜짐 · 클릭: 끄기 · 우클릭: 전체 DB 번역/전수검사'
+      : '클릭: 현재 화면 전체번역 · 우클릭: 전체 DB 번역/전수검사';
   }
 
   function addAiButton() {
@@ -1074,6 +1074,10 @@
     btn.addEventListener('click', () => {
       if (aiEnabled) disableAiTranslation();
       else void enableAiTranslation();
+    });
+    btn.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      void buildFullTranslationPack();
     });
 
     document.documentElement.appendChild(btn);
