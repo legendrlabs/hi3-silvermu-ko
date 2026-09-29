@@ -16,10 +16,10 @@
 ## 설치
 
 1. Tampermonkey 등 사용자스크립트 관리자를 설치합니다.
-2. [사용자스크립트 설치](https://raw.githubusercontent.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko/main/src/hi3-ko.user.js)를 눌러 설치합니다.
+2. [사용자스크립트 설치](https://raw.githubusercontent.com/legendrlabs/hi3-silvermu-ko/main/src/hi3-ko.user.js)를 눌러 설치합니다.
 3. `https://silvermu.top/database/hi3.html`을 새로고침합니다.
 
-GitHub Pages를 활성화한 뒤에는 `https://whtjddlfcjswo1-cloud.github.io/hi3-silvermu-ko/`를 커뮤니티 배포용 설치 페이지로 사용할 수 있습니다.
+GitHub Pages를 활성화한 뒤에는 `https://legendrlabs.github.io/hi3-silvermu-ko/`를 커뮤니티 배포용 설치 페이지로 사용할 수 있습니다.
 
 ## 현재 번역 범위
 
@@ -69,5 +69,5 @@ GitHub 저장소를 Public으로 만들고 **Settings → Pages → Deploy from 
 ## 링크
 
 - 원본 데이터베이스: https://silvermu.top/database/hi3.html
-- 프로젝트 저장소: https://github.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko
-- 이슈/번역 제안: https://github.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko/issues
+- 프로젝트 저장소: https://github.com/legendrlabs/hi3-silvermu-ko
+- 이슈/번역 제안: https://github.com/legendrlabs/hi3-silvermu-ko/issues
