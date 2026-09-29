@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.6.0
-// @description  silvermu.top 붕괴3rd 데이터베이스의 비공식 한국어 번역 레이어 + 미번역/리소스 진단 도구입니다.
+// @version      0.7.0
+// @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
 // @grant        GM_setClipboard
+// @grant        unsafeWindow
 // @license      MIT
 // @homepageURL  https://github.com/legendrlabs/hi3-silvermu-ko
 // @supportURL   https://github.com/legendrlabs/hi3-silvermu-ko/issues
@@ -18,12 +19,31 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.6.0';
+  const VERSION = '0.7.0';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA']);
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
+  const AI_BUTTON_ID = 'silvermu-hi3-ko-ai-button';
+  const AI_STATUS_ID = 'silvermu-hi3-ko-ai-status';
+  const AI_ENABLED_KEY = 'silvermu-hi3-ko-ai-enabled';
+  const CACHE_DB_NAME = 'silvermu-hi3-ko-cache';
+  const CACHE_DB_VERSION = 1;
+  const CACHE_STORE = 'translations';
+  const FULL_DATASETS = {
+    characters: '/data/db/bh3/characters.json',
+    weapons: '/data/db/bh3/weapons.json',
+    stigmata: '/data/db/bh3/stigmata.json',
+    elfs: '/data/db/bh3/elfs.json',
+    materials: '/data/db/bh3/materials.json',
+    tasks: '/data/db/bh3/tasks.json',
+    abyss: '/data/db/bh3/abyss.json',
+    battlefield: '/data/db/bh3/battlefield.json',
+    shops: '/data/db/bh3/shops.json',
+    cg: '/data/db/bh3/cg.json',
+    dictionary: '/data/db/bh3/dictionary.json',
+  };
 
   /**
    * 번역 원칙
@@ -693,6 +713,626 @@
     }
   }
 
+  function getTranslatorApi() {
+    try {
+      if (typeof Translator !== 'undefined') return Translator;
+    } catch {}
+    try {
+      if (typeof unsafeWindow !== 'undefined' && unsafeWindow.Translator) return unsafeWindow.Translator;
+    } catch {}
+    return null;
+  }
+
+  let translator = null;
+  let translatorCreating = null;
+  let aiEnabled = false;
+  let aiProcessorRunning = false;
+  let fullBuildCancelled = false;
+  const aiJobs = new Map();
+  const aiQueue = [];
+
+  function setAiStatus(text, busy = false) {
+    const el = document.getElementById(AI_STATUS_ID);
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = text ? 'block' : 'none';
+    el.dataset.busy = busy ? '1' : '0';
+  }
+
+  function openCacheDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(CACHE_DB_NAME, CACHE_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(CACHE_STORE)) {
+          db.createObjectStore(CACHE_STORE, { keyPath: 'source' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async function cacheGet(source) {
+    try {
+      const db = await openCacheDb();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readonly');
+        const req = tx.objectStore(CACHE_STORE).get(source);
+        req.onsuccess = () => resolve(req.result?.translated || null);
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function cachePut(source, translated, method = 'chrome-ai') {
+    if (!source || !translated || source === translated) return;
+    try {
+      const db = await openCacheDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readwrite');
+        tx.objectStore(CACHE_STORE).put({
+          source,
+          translated,
+          method,
+          updatedAt: new Date().toISOString(),
+        });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (error) {
+      console.warn('[silvermu-hi3-ko] cache write failed', error);
+    }
+  }
+
+  async function cacheGetAll() {
+    try {
+      const db = await openCacheDb();
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readonly');
+        const req = tx.objectStore(CACHE_STORE).getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  async function cacheClear() {
+    try {
+      const db = await openCacheDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(CACHE_STORE, 'readwrite');
+        tx.objectStore(CACHE_STORE).clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch {}
+  }
+
+  function protectKnownNames(input) {
+    let text = String(input);
+    const slots = [];
+    for (const [from, to] of INLINE_NAMES) {
+      if (!text.includes(from)) continue;
+      const token = '[[HI3NAME' + slots.length + ']]';
+      slots.push({ token, value: to });
+      text = text.split(from).join(token);
+    }
+    return {
+      text,
+      restore(value) {
+        let out = String(value);
+        for (const slot of slots) out = out.split(slot.token).join(slot.value);
+        return out;
+      },
+    };
+  }
+
+  async function ensureTranslator() {
+    if (translator) return translator;
+    if (translatorCreating) return translatorCreating;
+
+    const API = getTranslatorApi();
+    if (!API) throw new Error('Chrome Translator API를 찾을 수 없습니다.');
+
+    translatorCreating = API.create({
+      sourceLanguage: 'zh',
+      targetLanguage: 'ko',
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          const pct = Math.round((e.loaded || 0) * 100);
+          setAiStatus('중→한 번역 모델 준비 중… ' + pct + '%', true);
+        });
+      },
+    }).then((t) => {
+      translator = t;
+      translatorCreating = null;
+      setAiStatus('Chrome 로컬 AI 번역 준비 완료');
+      window.setTimeout(() => setAiStatus(''), 1800);
+      return t;
+    }).catch((error) => {
+      translatorCreating = null;
+      throw error;
+    });
+
+    return translatorCreating;
+  }
+
+  async function translateWithAi(source) {
+    const cached = await cacheGet(source);
+    if (cached) return cached;
+
+    const staticFirst = translateString(source);
+    if (staticFirst !== source && !HAN_RE.test(staticFirst)) {
+      await cachePut(source, staticFirst, 'static');
+      return staticFirst;
+    }
+
+    const t = await ensureTranslator();
+    const protectedText = protectKnownNames(source);
+    let result;
+
+    if (protectedText.text.length <= 5000) {
+      result = await t.translate(protectedText.text);
+    } else {
+      const parts = [];
+      let rest = protectedText.text;
+      while (rest.length > 5000) {
+        let cut = rest.lastIndexOf('\n', 4800);
+        if (cut < 1200) cut = rest.lastIndexOf('。', 4800);
+        if (cut < 1200) cut = 4800;
+        parts.push(rest.slice(0, cut + 1));
+        rest = rest.slice(cut + 1);
+      }
+      if (rest) parts.push(rest);
+      const translatedParts = [];
+      for (const part of parts) translatedParts.push(await t.translate(part));
+      result = translatedParts.join('');
+    }
+
+    result = protectedText.restore(result);
+    if (result && result !== source) await cachePut(source, result, 'chrome-ai');
+    return result || source;
+  }
+
+  function preserveWhitespace(original, translated) {
+    const leading = original.match(/^\s*/)?.[0] || '';
+    const trailing = original.match(/\s*$/)?.[0] || '';
+    return leading + translated.trim() + trailing;
+  }
+
+  function applyAiResult(job, translated) {
+    for (const target of job.targets) {
+      try {
+        if (target.kind === 'text') {
+          if (!target.node?.isConnected) continue;
+          target.node.nodeValue = preserveWhitespace(target.original, translated);
+        } else if (target.kind === 'attr') {
+          if (!target.el?.isConnected) continue;
+          target.el.setAttribute(target.attr, translated);
+        } else if (target.kind === 'value') {
+          if (!target.el?.isConnected) continue;
+          target.el.value = translated;
+        }
+      } catch {}
+    }
+  }
+
+  async function processAiQueue() {
+    if (aiProcessorRunning || !aiEnabled) return;
+    aiProcessorRunning = true;
+    let done = 0;
+
+    try {
+      while (aiEnabled && aiQueue.length) {
+        const source = aiQueue.shift();
+        const job = aiJobs.get(source);
+        if (!job) continue;
+        aiJobs.delete(source);
+
+        try {
+          const translated = await translateWithAi(source);
+          applyAiResult(job, translated);
+        } catch (error) {
+          console.warn('[silvermu-hi3-ko] AI translate failed', error);
+          setAiStatus('AI 번역 오류: ' + (error?.message || error));
+          break;
+        }
+
+        done += 1;
+        if (done % 5 === 0) {
+          setAiStatus('현재 화면 번역 중… 대기 ' + aiQueue.length + '개', true);
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
+      }
+    } finally {
+      aiProcessorRunning = false;
+      if (aiEnabled && !aiQueue.length) {
+        setAiStatus('현재 화면 번역 완료');
+        window.setTimeout(() => setAiStatus(''), 1500);
+      }
+    }
+  }
+
+  function enqueueAiTarget(source, target) {
+    const normalized = normalizeText(source);
+    if (!normalized || !HAN_RE.test(normalized)) return;
+
+    let job = aiJobs.get(normalized);
+    if (!job) {
+      job = { source: normalized, targets: [] };
+      aiJobs.set(normalized, job);
+      aiQueue.push(normalized);
+    }
+    job.targets.push(target);
+  }
+
+  function scanAiTargets(root = document) {
+    if (!aiEnabled || !root) return;
+
+    const visitText = (node) => {
+      const parent = node.parentElement;
+      if (!parent || SKIP_TAGS.has(parent.tagName)) return;
+      const value = node.nodeValue || '';
+      if (!HAN_RE.test(value)) return;
+      enqueueAiTarget(value, { kind: 'text', node, original: value });
+    };
+
+    const visitElement = (el) => {
+      if (!(el instanceof Element) || SKIP_TAGS.has(el.tagName)) return;
+      for (const attr of ATTRS) {
+        const value = el.getAttribute(attr);
+        if (value && HAN_RE.test(value)) {
+          enqueueAiTarget(value, { kind: 'attr', el, attr, original: value });
+        }
+      }
+      if (el instanceof HTMLInputElement && ['button', 'submit', 'reset'].includes(el.type)) {
+        if (HAN_RE.test(el.value)) enqueueAiTarget(el.value, { kind: 'value', el, original: el.value });
+      }
+    };
+
+    if (root.nodeType === Node.TEXT_NODE) visitText(root);
+    else if (root instanceof Element) visitElement(root);
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === Node.TEXT_NODE) visitText(node);
+      else visitElement(node);
+    }
+
+    void processAiQueue();
+  }
+
+  async function enableAiTranslation() {
+    const API = getTranslatorApi();
+    if (!API) {
+      window.alert('이 Chrome에서는 Translator API를 사용할 수 없습니다. 데스크톱 Chrome 138 이상이 필요합니다.');
+      return;
+    }
+
+    aiEnabled = true;
+    localStorage.setItem(AI_ENABLED_KEY, '1');
+    setAiStatus('Chrome 로컬 AI 번역 준비 중…', true);
+
+    try {
+      await ensureTranslator();
+      scanAiTargets(document);
+      updateAiButton();
+    } catch (error) {
+      aiEnabled = false;
+      localStorage.setItem(AI_ENABLED_KEY, '0');
+      updateAiButton();
+      window.alert('Chrome AI 번역기를 시작하지 못했습니다.\n' + (error?.message || error));
+    }
+  }
+
+  function disableAiTranslation() {
+    aiEnabled = false;
+    localStorage.setItem(AI_ENABLED_KEY, '0');
+    updateAiButton();
+    setAiStatus('AI 자동번역 꺼짐');
+    window.setTimeout(() => setAiStatus(''), 1200);
+  }
+
+  function updateAiButton() {
+    const btn = document.getElementById(AI_BUTTON_ID);
+    if (!btn) return;
+    btn.textContent = aiEnabled ? 'AI✓' : 'AI';
+    btn.title = aiEnabled
+      ? 'Chrome 로컬 AI 번역 켜짐 · 클릭하면 끄기'
+      : 'Chrome 로컬 AI로 남은 중국어 전부 번역';
+  }
+
+  function addAiButton() {
+    if (document.getElementById(AI_BUTTON_ID)) return;
+
+    const btn = document.createElement('button');
+    btn.id = AI_BUTTON_ID;
+    btn.type = 'button';
+    Object.assign(btn.style, {
+      position: 'fixed',
+      right: '62px',
+      bottom: '14px',
+      zIndex: '2147483647',
+      minWidth: '42px',
+      height: '32px',
+      padding: '0 10px',
+      border: '1px solid currentColor',
+      borderRadius: '999px',
+      background: 'Canvas',
+      color: 'CanvasText',
+      font: '600 13px/1 system-ui, sans-serif',
+      cursor: 'pointer',
+      opacity: '0.88',
+    });
+
+    btn.addEventListener('click', () => {
+      if (aiEnabled) disableAiTranslation();
+      else void enableAiTranslation();
+    });
+
+    document.documentElement.appendChild(btn);
+    updateAiButton();
+
+    const status = document.createElement('div');
+    status.id = AI_STATUS_ID;
+    Object.assign(status.style, {
+      position: 'fixed',
+      right: '14px',
+      bottom: '54px',
+      zIndex: '2147483647',
+      display: 'none',
+      maxWidth: '360px',
+      padding: '8px 11px',
+      borderRadius: '8px',
+      background: 'Canvas',
+      color: 'CanvasText',
+      border: '1px solid currentColor',
+      font: '12px/1.45 system-ui, sans-serif',
+      opacity: '0.94',
+      boxShadow: '0 3px 18px rgba(0,0,0,.2)',
+    });
+    document.documentElement.appendChild(status);
+  }
+
+  function collectChineseStrings(value, out, seen = new WeakSet()) {
+    if (value == null) return;
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (!text || !HAN_RE.test(text)) return;
+      if (/^(?:https?:|assets\/|\/assets\/)/i.test(text)) return;
+      out.add(text);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) collectChineseStrings(item, out, seen);
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (/^(?:image|icon|url|server|id)$/i.test(key)) continue;
+      collectChineseStrings(child, out, seen);
+    }
+  }
+
+  async function fetchDatasetStrings() {
+    const result = {};
+    for (const [name, path] of Object.entries(FULL_DATASETS)) {
+      if (fullBuildCancelled) break;
+      setAiStatus('전체 검사: ' + name + ' 데이터 읽는 중…', true);
+      const response = await fetch(path, { cache: 'no-cache' });
+      if (!response.ok) throw new Error(name + ' 데이터 요청 실패: HTTP ' + response.status);
+      const json = await response.json();
+      const strings = new Set();
+      collectChineseStrings(json, strings);
+      result[name] = [...strings];
+    }
+    return result;
+  }
+
+  async function exportJson(filename, value) {
+    const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+
+  async function exportTranslationPack(datasetStrings = null) {
+    const rows = await cacheGetAll();
+    const translations = {};
+    for (const row of rows) translations[row.source] = row.translated;
+
+    const payload = {
+      format: 'silvermu-hi3-ko-cache-v1',
+      patchVersion: VERSION,
+      generatedAt: new Date().toISOString(),
+      engine: 'Chrome Translator API zh→ko + static overrides',
+      translations,
+    };
+
+    if (!datasetStrings) {
+      await exportJson('hi3-ko-translation-pack-' + VERSION + '.json', payload);
+      return null;
+    }
+
+    const report = {
+      patchVersion: VERSION,
+      generatedAt: new Date().toISOString(),
+      datasets: {},
+    };
+    let total = 0;
+    let translated = 0;
+
+    for (const [name, strings] of Object.entries(datasetStrings)) {
+      let ok = 0;
+      const remaining = [];
+      for (const source of strings) {
+        const staticText = translateString(source);
+        if (!HAN_RE.test(staticText)) {
+          ok += 1;
+          continue;
+        }
+        const cached = translations[source];
+        if (cached && !HAN_RE.test(cached)) ok += 1;
+        else remaining.push(source);
+      }
+
+      total += strings.length;
+      translated += ok;
+      report.datasets[name] = {
+        total: strings.length,
+        translated: ok,
+        remaining: strings.length - ok,
+        coverage: strings.length ? Number((ok / strings.length * 100).toFixed(2)) : 100,
+        remainingSamples: remaining.slice(0, 200),
+      };
+    }
+
+    report.total = {
+      strings: total,
+      translated,
+      remaining: total - translated,
+      coverage: total ? Number((translated / total * 100).toFixed(2)) : 100,
+    };
+
+    await exportJson('hi3-ko-full-audit-' + VERSION + '.json', {
+      ...payload,
+      coverage: report,
+    });
+    return report;
+  }
+
+  async function translateBatch(items) {
+    if (!items.length) return [];
+    const t = await ensureTranslator();
+
+    const protectedItems = items.map((source) => protectKnownNames(source));
+    const marked = protectedItems.map((item, i) => '[[HI3SEG' + i + ']]\n' + item.text).join('\n');
+    if (marked.length > 12000 || items.length === 1) {
+      const out = [];
+      for (let i = 0; i < items.length; i++) {
+        out.push(await translateWithAi(items[i]));
+      }
+      return out;
+    }
+
+    try {
+      const translated = await t.translate(marked);
+      const re = /\[\[HI3SEG(\d+)\]\]\s*/g;
+      const marks = [];
+      let match;
+      while ((match = re.exec(translated))) {
+        marks.push({ index: Number(match[1]), start: match.index, contentStart: re.lastIndex });
+      }
+      if (marks.length !== items.length) throw new Error('segment markers changed');
+
+      const out = new Array(items.length);
+      for (let i = 0; i < marks.length; i++) {
+        const end = i + 1 < marks.length ? marks[i + 1].start : translated.length;
+        const raw = translated.slice(marks[i].contentStart, end).trim();
+        out[marks[i].index] = protectedItems[marks[i].index].restore(raw);
+      }
+      if (out.some((x) => !x)) throw new Error('segment parse failed');
+      return out;
+    } catch {
+      const out = [];
+      for (const source of items) out.push(await translateWithAi(source));
+      return out;
+    }
+  }
+
+  async function buildFullTranslationPack() {
+    const API = getTranslatorApi();
+    if (!API) {
+      window.alert('전체 번역팩 생성에는 데스크톱 Chrome 138 이상의 Translator API가 필요합니다.');
+      return;
+    }
+
+    fullBuildCancelled = false;
+    aiEnabled = true;
+    localStorage.setItem(AI_ENABLED_KEY, '1');
+    setAiStatus('전체 DB 번역팩 준비 중…', true);
+
+    try {
+      await ensureTranslator();
+      const datasets = await fetchDatasetStrings();
+      const all = [...new Set(Object.values(datasets).flat())];
+      const pending = [];
+
+      for (const source of all) {
+        const staticText = translateString(source);
+        if (!HAN_RE.test(staticText)) {
+          await cachePut(source, staticText, 'static');
+          continue;
+        }
+        const cached = await cacheGet(source);
+        if (!cached || HAN_RE.test(cached)) pending.push(source);
+      }
+
+      let completed = all.length - pending.length;
+      setAiStatus('전체 DB 번역: ' + completed + '/' + all.length + ' · AI 번역 ' + pending.length + '개 대기', true);
+
+      let cursor = 0;
+      while (cursor < pending.length && !fullBuildCancelled) {
+        const batch = [];
+        let chars = 0;
+        while (cursor < pending.length && batch.length < 8) {
+          const value = pending[cursor];
+          if (batch.length && chars + value.length > 7000) break;
+          batch.push(value);
+          chars += value.length;
+          cursor += 1;
+        }
+
+        const translated = await translateBatch(batch);
+        for (let i = 0; i < batch.length; i++) {
+          if (translated[i] && translated[i] !== batch[i]) {
+            await cachePut(batch[i], translated[i], 'chrome-ai');
+          }
+        }
+
+        completed += batch.length;
+        const pct = Math.round(completed / all.length * 100);
+        setAiStatus('전체 DB 번역 중… ' + completed + '/' + all.length + ' (' + pct + '%)', true);
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+      }
+
+      if (fullBuildCancelled) {
+        setAiStatus('전체 번역팩 생성 취소됨');
+        return;
+      }
+
+      const report = await exportTranslationPack(datasets);
+      scanAiTargets(document);
+      setAiStatus('전체 DB 완료 · 커버리지 ' + report.total.coverage + '% · 파일 2개 저장됨');
+      window.alert(
+        '전체 DB 번역/검사가 끝났습니다.\n' +
+        '전체 고유 중국어 문자열: ' + report.total.strings + '개\n' +
+        '번역 완료: ' + report.total.translated + '개\n' +
+        '남음: ' + report.total.remaining + '개\n' +
+        '커버리지: ' + report.total.coverage + '%\n\n' +
+        '다운로드된 translation-pack과 coverage JSON 두 파일을 ChatGPT에 올려 주세요.'
+      );
+    } catch (error) {
+      console.error('[silvermu-hi3-ko] full build failed', error);
+      setAiStatus('전체 번역 실패: ' + (error?.message || error));
+      window.alert('전체 번역팩 생성 중 오류가 발생했습니다.\n' + (error?.message || error));
+    }
+  }
+
   function addBadge() {
     if (document.getElementById(BADGE_ID)) return;
     const badge = document.createElement('button');
@@ -722,6 +1362,7 @@
       void copyDiagnosticReport();
     });
     document.documentElement.appendChild(badge);
+    addAiButton();
   }
 
   const pendingRoots = new Set();
@@ -752,6 +1393,7 @@
       for (const node of minimalRoots) {
         try {
           translateTree(node);
+          if (aiEnabled) scanAiTargets(node);
         } catch (error) {
           console.warn('[silvermu-hi3-ko] translate skipped', error);
         }
@@ -798,6 +1440,19 @@
     });
 
     addBadge();
+    aiEnabled = localStorage.getItem(AI_ENABLED_KEY) === '1';
+    updateAiButton();
+
+    // Translator.create는 사용자 동작이 필요할 수 있으므로 자동 시작하지 않는다.
+    // AI가 이전 세션에서 켜져 있었다면 다음 사용자 클릭 때 다시 초기화한다.
+    if (aiEnabled && !translator) {
+      const arm = () => {
+        document.removeEventListener('click', arm, true);
+        void enableAiTranslation();
+      };
+      document.addEventListener('click', arm, true);
+      setAiStatus('AI 번역 대기 중 · 페이지를 한 번 클릭하면 시작');
+    }
   }
 
   function start() {
@@ -815,6 +1470,18 @@
     GM_registerMenuCommand('한국어 패치 끄기', () => setEnabled(false));
     GM_registerMenuCommand('진단 보고서 복사', () => void copyDiagnosticReport());
     GM_registerMenuCommand('미번역 중국어만 복사', () => void copyUntranslatedOnly());
+    GM_registerMenuCommand('Chrome AI 현재 화면 전체번역', () => void enableAiTranslation());
+    GM_registerMenuCommand('전체 DB 번역팩 생성 + 전수검사', () => void buildFullTranslationPack());
+    GM_registerMenuCommand('전체 DB 번역 작업 취소', () => {
+      fullBuildCancelled = true;
+      setAiStatus('전체 DB 번역 취소 요청됨');
+    });
+    GM_registerMenuCommand('현재 번역팩 내보내기', () => void exportTranslationPack());
+    GM_registerMenuCommand('AI 번역 캐시 초기화', async () => {
+      if (!window.confirm('저장된 AI 번역 캐시를 전부 지울까요?')) return;
+      await cacheClear();
+      window.alert('AI 번역 캐시를 초기화했습니다.');
+    });
   }
 
   start();
