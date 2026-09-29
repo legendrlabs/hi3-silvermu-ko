@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
-// @namespace    https://github.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko
+// @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
 // @version      0.1.0
 // @description  silvermu.top 붕괴3rd 데이터베이스의 비공식 한국어 번역 레이어입니다.
 // @author       Community
@@ -8,10 +8,10 @@
 // @run-at       document-start
 // @grant        GM_registerMenuCommand
 // @license      MIT
-// @homepageURL  https://github.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko
-// @supportURL   https://github.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko/issues
-// @downloadURL  https://raw.githubusercontent.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko/main/src/hi3-ko.user.js
-// @updateURL    https://raw.githubusercontent.com/whtjddlfcjswo1-cloud/hi3-silvermu-ko/main/src/hi3-ko.user.js
+// @homepageURL  https://github.com/legendrlabs/hi3-silvermu-ko
+// @supportURL   https://github.com/legendrlabs/hi3-silvermu-ko/issues
+// @downloadURL  https://raw.githubusercontent.com/legendrlabs/hi3-silvermu-ko/main/src/hi3-ko.user.js
+// @updateURL    https://raw.githubusercontent.com/legendrlabs/hi3-silvermu-ko/main/src/hi3-ko.user.js
 // ==/UserScript==
 
 (() => {
