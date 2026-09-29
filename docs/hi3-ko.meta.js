@@ -8,6 +8,7 @@
 // @run-at       document-idle
 // @grant        GM_registerMenuCommand
 // @grant        GM_setClipboard
+// @grant        unsafeWindow
 // @license      MIT
 // @homepageURL  https://github.com/legendrlabs/hi3-silvermu-ko
 // @supportURL   https://github.com/legendrlabs/hi3-silvermu-ko/issues
