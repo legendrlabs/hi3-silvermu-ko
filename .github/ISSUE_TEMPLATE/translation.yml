@@ -1,7 +1,6 @@
 name: 번역 추가/수정
-about: 중국어 원문에 대한 한국어 번역을 제안합니다.
+description: 중국어 원문에 대한 한국어 번역을 제안합니다.
 title: "[번역] "
-labels: [translation]
 body:
   - type: input
     id: source
