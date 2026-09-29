@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2
+
+- 대형 카테고리에서 페이지가 멈출 수 있던 MutationObserver 부하 완화
+- characterData/attributes 연속 감시 제거
+- childList 추가만 관찰하고 번역 작업을 idle/debounce 처리
+- 같은 렌더 배치에서 부모/자식 중복 순회 제거
+- 대량 DOM 삽입 시 상위 컨테이너 단위 번역으로 전환
+- 원본 앱 초기 렌더링 우선 대기 시간을 1.5초로 조정
+
 ## 0.4.1
 
 - Tampermonkey 자동 업데이트용 전용 `hi3-ko.meta.js` 추가
