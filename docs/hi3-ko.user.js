@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.7.3
+// @version      0.8.0
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.7.3';
+  const VERSION = '0.8.0';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -861,6 +861,154 @@
     };
   }
 
+  const POST_EDIT_GLOSSARY = [
+    // 세계관 핵심 용어
+    ['律者', '율자', ['변호사', '법률가', 'Lawr', 'lawr', 'Lawyer', 'lawyer', 'Herrscher', 'Herscher', '법칙']],
+    ['天命', '천명', ['운명', 'Destiny', 'destiny', 'Schicksal', 'Shicksal']],
+    ['逆熵', '네겐트로피', ['역 엔트로피', '역엔트로피', 'Anti-Entropy', 'anti-entropy', 'Reverse Entropy']],
+    ['圣痕', '성흔', ['낙인', 'Stigma', 'stigma', '성스러운 흔적', '성스러운 낙인']],
+    ['舰长', '함장', ['캡틴', '선장', 'Captain', 'captain']],
+    ['女武神', '발키리', ['전투여신', '전투 여신', '전투무녀', '전투 무녀', '전투처녀', '전투 처녀', 'Valkyrie']],
+    ['崩坏兽', '붕괴수', ['Honkai Beast', 'Honkai beast', '혼카이 비스트', 'Broken Beast', 'broken beast', '붕괴된 짐승', '부서진 짐승']],
+    ['崩坏能', '붕괴 에너지', ['Honkai Energy', 'Honkai energy', '혼카이 에너지', 'Broken Energy', 'broken energy', '붕괴된 에너지', '부서진 에너지', '파손 에너지']],
+    ['崩坏', '붕괴', ['Honkai', 'honkai', '혼카이']],
+    ['爱酱', '아이쨩', ['사랑 소스', '러브 소스', 'AI 소스', '아이 소스', 'Love Sauce', 'Ai-chan', 'AI-chan']],
+    ['重装小兔', '중장토끼', ['Armored Bunny', 'Armor Bunny', '장갑 토끼', '중장 토끼']],
+    ['月光王座', '월광왕좌', ['Moonlight Throne', '달빛 왕좌', '달빛 옥좌']],
+    ['神之键', '신의 열쇠', ['God Key', 'Key of God', '신의 키']],
+    ['往世乐土', '과거의 낙원', ['Elysian Realm', '왕세낙토']],
+    ['记忆战场', '기억 전장', ['Memory Battlefield', '메모리 전장']],
+    ['圣芙蕾雅', '성 프레이야', ['St. Freya', 'Saint Freya', '성 프레야']],
+
+    // 주요 인명
+    ['琪亚娜', '키아나', ['Kiana', '키아나아']],
+    ['雷电芽衣', '라이덴 메이', ['Raiden Mei', '라이덴 메이이']],
+    ['芽衣', '메이', ['Mei', '메이이']],
+    ['布洛妮娅', '브로냐', ['Bronya', 'Bronia', '브로니아']],
+    ['德丽莎', '테레사', ['Theresa', 'Teresa', '데리사']],
+    ['无量塔姬子', '무라타 히메코', ['Murata Himeko', '무라타 지코']],
+    ['姬子', '히메코', ['Himeko', '지코']],
+    ['符华', '후카', ['Fu Hua', 'Fuhua', '푸화']],
+    ['卡莲', '카렌', ['Kallen', 'Karen', '카를렌']],
+    ['西琳', '시린', ['Sirin', 'Xilin', '실린']],
+    ['可可利亚', '코콜리아', ['Cocolia', 'Kokolia', 'Cocoia']],
+    ['齐格飞', '지크프리트', ['Siegfried', '지그페이', '지그프리드']],
+    ['塞西莉亚', '세실리아', ['Cecilia', '세시리아']],
+    ['八重樱', '야에 사쿠라', ['Yae Sakura', '예아 사쿠라', '야에 사쿠라']],
+    ['八重凛', '야에 린', ['Yae Rin', '예아 린']],
+    ['幽兰黛尔', '듀란달', ['Durandal', '유란델']],
+    ['丽塔', '리타', ['Rita']],
+    ['希儿', '제레', ['Seele', '실']],
+    ['爱莉希雅', '엘리시아', ['Elysia', '엘리샤']],
+    ['阿波尼亚', '아포니아', ['Aponia']],
+    ['伊甸', '에덴', ['Eden']],
+    ['维尔薇', '빌브이', ['Vill-V', 'Vil-V']],
+    ['千劫', '칼파스', ['Kalpas', '칼파']],
+    ['梅比乌斯', '뫼비우스', ['Mobius', 'Möbius', '모비우스']],
+    ['帕朵菲莉丝', '파르도 필리스', ['Pardofelis', 'Pardo Felis']],
+    ['格蕾修', '그리세오', ['Griseo']],
+    ['科斯魔', '코스마', ['Kosma']],
+    ['凯文', '케빈', ['Kevin']],
+    ['希娜狄雅', '세나디아', ['Senadina', 'Sina Diya', 'Hina Diya']],
+    ['科拉莉', '코랄리', ['Coralie', 'Korali']],
+    ['赫丽娅', '헬리아', ['Helia']],
+    ['薇塔', '비타', ['Vita']],
+    ['寻梦者', '드림시커', ['Dreamseeker', '몽상가', '몽상자']],
+
+    // 전투/스탯 용어
+    ['火焰元素伤害', '화염 원소 피해', ['화염 요소 피해', '화재 원소 피해', 'Fire Elemental Damage']],
+    ['冰冻元素伤害', '빙결 원소 피해', ['얼음 요소 피해', '빙결 요소 피해', '동결 원소 피해', 'Ice Elemental Damage']],
+    ['雷电元素伤害', '뇌전 원소 피해', ['번개 피해', '번개 원소 피해', '뇌전 요소 피해', 'Lightning Elemental Damage']],
+    ['物理伤害', '물리 피해', ['Physical Damage', '물리적 피해']],
+    ['必杀技', '필살기', ['궁극기', 'Ultimate']],
+    ['普通攻击', '기본 공격', ['일반 공격', 'Normal Attack']],
+    ['分支攻击', '분기 공격', ['Branch Attack']],
+    ['蓄力攻击', '차지 공격', ['충전 공격', 'Charged Attack']],
+    ['极限闪避', '극한 회피', ['Ultimate Evasion', '한계 회피']],
+    ['时空断裂', '시공 단열', ['Time Fracture', '시공간 파열']],
+    ['时空减速', '시공 감속', ['Time Slow', '시공간 감속']],
+    ['流血', '출혈', ['Bleeding', 'Bleed']],
+    ['点燃', '점화', ['Ignite', '연소']],
+    ['麻痹', '마비', ['Paralysis']],
+    ['脆弱', '취약', ['Impair', '약화']],
+    ['会心', '회심', ['Crit', '크리티컬']],
+  ];
+
+  function replaceLimited(text, bad, good, limit) {
+    if (!bad || bad === good || limit <= 0 || !text.includes(bad)) return { text, used: 0 };
+    let out = text;
+    let used = 0;
+    while (used < limit) {
+      const index = out.indexOf(bad);
+      if (index < 0) break;
+      out = out.slice(0, index) + good + out.slice(index + bad.length);
+      used += 1;
+    }
+    return { text: out, used };
+  }
+
+  function postEditTranslation(source, translated) {
+    let out = String(translated ?? '');
+    if (!out) return out;
+
+    for (const [sourceTerm, good, badForms] of POST_EDIT_GLOSSARY) {
+      const sourceCount = source.split(sourceTerm).length - 1;
+      if (!sourceCount) continue;
+
+      let remaining = sourceCount;
+      for (const bad of badForms) {
+        if (remaining <= 0) break;
+        const result = replaceLimited(out, bad, good, remaining);
+        out = result.text;
+        remaining -= result.used;
+      }
+    }
+
+    // 흔한 기계번역 표기 흔들림 정리
+    out = out
+      .replace(/\bQte\b/g, 'QTE')
+      .replace(/\bqte\b/g, 'QTE')
+      .replace(/\s+([,.!?。！？])/g, '$1')
+      .replace(/([가-힣])\s+([,.!?])/g, '$1$2')
+      .replace(/ {2,}/g, ' ');
+
+    return out;
+  }
+
+  async function rewriteCacheWithPostEdit() {
+    setAiStatus('기존 번역 캐시 용어 교정 중…', true);
+    try {
+      const rows = await cacheGetAll();
+      const changed = [];
+
+      for (const row of rows) {
+        const revised = postEditTranslation(row.source, row.translated);
+        if (revised && revised !== row.translated) {
+          changed.push({
+            source: row.source,
+            translated: revised,
+            method: 'post-edited',
+          });
+        }
+      }
+
+      const chunk = 500;
+      for (let i = 0; i < changed.length; i += chunk) {
+        await cachePutMany(changed.slice(i, i + chunk), 'post-edited');
+      }
+
+      setAiStatus('기존 캐시 용어 교정 완료: ' + changed.length + '개');
+      window.alert(
+        '기존 AI 번역 캐시의 붕괴3rd 용어를 교정했습니다.\n' +
+        '수정된 번역: ' + changed.length + '개\n\n' +
+        '페이지를 새로고침하면 적용됩니다.'
+      );
+    } catch (error) {
+      console.error('[silvermu-hi3-ko] post edit failed', error);
+      setAiStatus('캐시 교정 실패: ' + (error?.message || error));
+    }
+  }
+
   async function ensureTranslator() {
     if (translator) return translator;
     if (translatorCreating) return translatorCreating;
@@ -892,14 +1040,15 @@
   }
 
   async function translateWithAi(source) {
-    const cached = await cacheGet(source);
-    if (cached) return cached;
-
+    // 새 수동/규칙 번역은 예전에 저장된 AI 캐시보다 항상 우선한다.
     const staticFirst = translateString(source);
     if (staticFirst !== source && !HAN_RE.test(staticFirst)) {
       await cachePut(source, staticFirst, 'static');
       return staticFirst;
     }
+
+    const cached = await cacheGet(source);
+    if (cached) return postEditTranslation(source, cached);
 
     const t = await ensureTranslator();
     const protectedText = protectKnownNames(source);
@@ -924,6 +1073,7 @@
     }
 
     result = protectedText.restore(result);
+    result = postEditTranslation(source, result);
     if (result && result !== source) await cachePut(source, result, 'chrome-ai');
     return result || source;
   }
@@ -1209,7 +1359,9 @@
   async function exportTranslationPack(datasetStrings = null) {
     const rows = await cacheGetAll();
     const translations = {};
-    for (const row of rows) translations[row.source] = row.translated;
+    for (const row of rows) {
+      translations[row.source] = postEditTranslation(row.source, row.translated);
+    }
 
     const payload = {
       format: 'silvermu-hi3-ko-cache-v1',
@@ -1683,6 +1835,7 @@
       fullBuildCancelled = true;
       setAiStatus('전체 DB 번역 취소 요청됨');
     });
+    GM_registerMenuCommand('기존 AI 번역 붕괴3rd 용어 일괄 교정', () => void rewriteCacheWithPostEdit());
     GM_registerMenuCommand('전수검사 JSON 다시 내보내기 (재번역 없음)', () => void exportFullAuditFromCache());
     GM_registerMenuCommand('현재 번역팩 내보내기', () => void exportTranslationPack());
     GM_registerMenuCommand('AI 번역 캐시 초기화', async () => {
