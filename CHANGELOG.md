@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Tampermonkey 자동 업데이트용 전용 `hi3-ko.meta.js` 추가
+- `@updateURL`을 메타데이터 파일로 분리
+- 실제 스크립트 다운로드는 `@downloadURL`의 `hi3-ko.user.js` 유지
+
 ## 0.4.0
 
 - weapons/stigmata/elfs/materials/tasks/abyss/battlefield/shops/cg 데이터 경로 확인
