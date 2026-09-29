@@ -35,6 +35,21 @@ GitHub Pages를 활성화한 뒤에는 `https://legendrlabs.github.io/hi3-silver
 
 동적으로 추가되는 DOM도 `MutationObserver`로 감지해 번역합니다.
 
+## v0.7.0
+
+Chrome 데스크톱의 내장 Translator API를 이용해 수동 번역 사전에 없는 중국어를 로컬에서 한국어로 번역할 수 있습니다.
+
+- 우측 아래 **AI 버튼 클릭**: 현재 화면의 남은 중국어 전체 번역
+- **AI 버튼 우클릭**: 원본 DB 11개 파일 전체 수집 → 번역팩 생성 → 전수 커버리지 검사
+- 기존 수동/공식 번역 사전을 우선 적용하고, 남은 문자열만 Chrome 로컬 번역 사용
+- 결과는 IndexedDB에 캐시되어 같은 문구를 다시 번역하지 않음
+- 전수검사가 끝나면 `hi3-ko-full-audit-0.7.0.json` 파일 하나가 생성됨
+- 이 파일에는 번역 사전과 카테고리별 번역 커버리지가 함께 포함됨
+
+전수검사 대상: characters, weapons, stigmata, elfs, materials, tasks, abyss, battlefield, shops, cg, dictionary.
+
+> Chrome Translator API가 처음 사용되는 PC에서는 중국어→한국어 언어 모델 다운로드가 먼저 진행될 수 있습니다. 번역은 브라우저 로컬에서 실행됩니다.
+
 ## v0.4.0
 
 카테고리별 진단 결과를 바탕으로 반복되는 중국어 표현을 규칙 기반으로 번역합니다.
