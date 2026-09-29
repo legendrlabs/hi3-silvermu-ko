@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.4.1
+// @version      0.4.2
 // @description  silvermu.top 붕괴3rd 데이터베이스의 비공식 한국어 번역 레이어 + 미번역/리소스 진단 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -18,7 +18,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.4.1';
+  const VERSION = '0.4.2';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -542,24 +542,77 @@
     document.documentElement.appendChild(badge);
   }
 
+  const pendingRoots = new Set();
+  let flushScheduled = false;
+
+  function scheduleTranslation(root) {
+    if (!root) return;
+    pendingRoots.add(root);
+    if (flushScheduled) return;
+    flushScheduled = true;
+
+    const flush = () => {
+      flushScheduled = false;
+      const roots = [...pendingRoots];
+      pendingRoots.clear();
+
+      // 부모가 이미 큐에 있으면 그 자식은 따로 순회하지 않는다.
+      const minimalRoots = roots.filter((node, index, arr) => {
+        if (!(node instanceof Node)) return false;
+        return !arr.some((other, otherIndex) =>
+          otherIndex !== index &&
+          other instanceof Node &&
+          other !== node &&
+          other.contains?.(node)
+        );
+      });
+
+      for (const node of minimalRoots) {
+        try {
+          translateTree(node);
+        } catch (error) {
+          console.warn('[silvermu-hi3-ko] translate skipped', error);
+        }
+      }
+    };
+
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(flush, { timeout: 600 });
+    } else {
+      window.setTimeout(flush, 120);
+    }
+  }
+
   function activateTranslation() {
     const root = document.documentElement || document;
-    translateTree(root);
 
+    // 초기 렌더링 완료 후 1회만 전체 번역.
+    scheduleTranslation(root);
+
+    // 대형 목록에서 자기 자신이 만든 text/attribute mutation까지 다시 감시하면
+    // 렌더링을 방해할 수 있으므로 childList 추가만 가볍게 감시한다.
     const observer = new MutationObserver((records) => {
+      let queued = 0;
+
       for (const record of records) {
-        if (record.type === 'characterData') translateTextNode(record.target);
-        if (record.type === 'attributes') translateElement(record.target);
-        for (const node of record.addedNodes) translateTree(node);
+        for (const node of record.addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.TEXT_NODE) continue;
+          scheduleTranslation(node);
+          queued += 1;
+
+          // 한 프레임에 대량 삽입되는 경우 상위 컨테이너 한 번만 처리.
+          if (queued >= 80) {
+            scheduleTranslation(record.target);
+            break;
+          }
+        }
+        if (queued >= 80) break;
       }
     });
 
     observer.observe(root, {
       childList: true,
       subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ATTRS,
     });
 
     addBadge();
@@ -568,8 +621,8 @@
   function start() {
     if (!enabled()) return;
 
-    // 원본 앱 초기화와 충돌하지 않도록 페이지 로드 이후에 번역 레이어를 시작한다.
-    const boot = () => window.setTimeout(activateTranslation, 800);
+    // 원본 앱과 대형 JSON 목록 렌더링을 우선한다.
+    const boot = () => window.setTimeout(activateTranslation, 1500);
 
     if (document.readyState === 'complete') boot();
     else window.addEventListener('load', boot, { once: true });
