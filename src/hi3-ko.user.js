@@ -1162,49 +1162,57 @@
       engine: 'Chrome Translator API zh→ko + static overrides',
       translations,
     };
-    await exportJson('hi3-ko-translation-pack-' + VERSION + '.json', payload);
 
-    if (datasetStrings) {
-      const report = {
-        patchVersion: VERSION,
-        generatedAt: new Date().toISOString(),
-        datasets: {},
-      };
-      let total = 0;
-      let translated = 0;
-      for (const [name, strings] of Object.entries(datasetStrings)) {
-        let ok = 0;
-        const remaining = [];
-        for (const source of strings) {
-          const staticText = translateString(source);
-          if (!HAN_RE.test(staticText)) {
-            ok += 1;
-            continue;
-          }
-          const cached = translations[source];
-          if (cached && !HAN_RE.test(cached)) ok += 1;
-          else remaining.push(source);
-        }
-        total += strings.length;
-        translated += ok;
-        report.datasets[name] = {
-          total: strings.length,
-          translated: ok,
-          remaining: strings.length - ok,
-          coverage: strings.length ? Number((ok / strings.length * 100).toFixed(2)) : 100,
-          remainingSamples: remaining.slice(0, 100),
-        };
-      }
-      report.total = {
-        strings: total,
-        translated,
-        remaining: total - translated,
-        coverage: total ? Number((translated / total * 100).toFixed(2)) : 100,
-      };
-      await exportJson('hi3-ko-coverage-' + VERSION + '.json', report);
-      return report;
+    if (!datasetStrings) {
+      await exportJson('hi3-ko-translation-pack-' + VERSION + '.json', payload);
+      return null;
     }
-    return null;
+
+    const report = {
+      patchVersion: VERSION,
+      generatedAt: new Date().toISOString(),
+      datasets: {},
+    };
+    let total = 0;
+    let translated = 0;
+
+    for (const [name, strings] of Object.entries(datasetStrings)) {
+      let ok = 0;
+      const remaining = [];
+      for (const source of strings) {
+        const staticText = translateString(source);
+        if (!HAN_RE.test(staticText)) {
+          ok += 1;
+          continue;
+        }
+        const cached = translations[source];
+        if (cached && !HAN_RE.test(cached)) ok += 1;
+        else remaining.push(source);
+      }
+
+      total += strings.length;
+      translated += ok;
+      report.datasets[name] = {
+        total: strings.length,
+        translated: ok,
+        remaining: strings.length - ok,
+        coverage: strings.length ? Number((ok / strings.length * 100).toFixed(2)) : 100,
+        remainingSamples: remaining.slice(0, 200),
+      };
+    }
+
+    report.total = {
+      strings: total,
+      translated,
+      remaining: total - translated,
+      coverage: total ? Number((translated / total * 100).toFixed(2)) : 100,
+    };
+
+    await exportJson('hi3-ko-full-audit-' + VERSION + '.json', {
+      ...payload,
+      coverage: report,
+    });
+    return report;
   }
 
   async function translateBatch(items) {
@@ -1464,6 +1472,10 @@
     GM_registerMenuCommand('미번역 중국어만 복사', () => void copyUntranslatedOnly());
     GM_registerMenuCommand('Chrome AI 현재 화면 전체번역', () => void enableAiTranslation());
     GM_registerMenuCommand('전체 DB 번역팩 생성 + 전수검사', () => void buildFullTranslationPack());
+    GM_registerMenuCommand('전체 DB 번역 작업 취소', () => {
+      fullBuildCancelled = true;
+      setAiStatus('전체 DB 번역 취소 요청됨');
+    });
     GM_registerMenuCommand('현재 번역팩 내보내기', () => void exportTranslationPack());
     GM_registerMenuCommand('AI 번역 캐시 초기화', async () => {
       if (!window.confirm('저장된 AI 번역 캐시를 전부 지울까요?')) return;
