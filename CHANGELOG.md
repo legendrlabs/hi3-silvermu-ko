@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+- Chrome Translator API(로컬 중→한 번역) 기반 전체 번역 fallback 추가
+- 기존 수동/공식 번역 사전을 우선 적용하고 남은 중국어만 로컬 AI 번역
+- 번역 결과 IndexedDB 캐시로 재사용
+- 현재 화면 전체 AI 번역 버튼 및 Tampermonkey 메뉴 추가
+- 원본 11개 JSON(characters/weapons/stigmata/elfs/materials/tasks/abyss/battlefield/shops/cg/dictionary) 전수 수집
+- 전체 DB 번역팩 생성 + 카테고리별 커버리지 자동 검사
+- 전체 작업 중 취소 지원
+- 전수검사 결과를 `hi3-ko-full-audit-0.7.0.json` 하나로 내보내기
+- v0.4.2의 저부하 DOM 감시 구조 유지
+
 ## 0.6.0
 
 - 최신 캐릭터 카드 이름 번역 범위 확대
