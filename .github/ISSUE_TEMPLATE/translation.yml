@@ -1,0 +1,27 @@
+name: 번역 추가/수정
+about: 중국어 원문에 대한 한국어 번역을 제안합니다.
+title: "[번역] "
+labels: [translation]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: 중국어 원문
+    validations:
+      required: true
+  - type: input
+    id: korean
+    attributes:
+      label: 제안 한국어 번역
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 화면/문맥
+      description: 캐릭터, 무기, 성흔, 상세창 등 어디에서 보이는지 적어 주세요.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 공식 표기 근거
+      description: 공식 한국어 명칭 링크 또는 설명이 있으면 적어 주세요.
