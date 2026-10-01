@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.9.0
+// @version      0.9.1
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.9.0';
+  const VERSION = '0.9.1';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -257,6 +257,20 @@
     ['融核装·深红', '퓨전 아머·스칼렛'],
     ['次元边界突破', '차원 경계 돌파'],
     ['处刑装·紫苑', '처형복·반혼초'],
+    ['第六夜想曲', '제6 야상곡'],
+    ['炽翎', '치령'],
+    ['影骑士·月轮', '영기사·월륜'],
+    ['女武神·迅羽', '발키리·해청'],
+    ['圣仪装·今样', '성결 예장·금양'],
+    ['神恩颂歌', '신은송가'],
+    ['真炎幸魂', '진염행혼'],
+    ['银狼的黎明', '은랑의 여명'],
+    ['樱火轮舞', '앵화윤무'],
+    ['女武神·誓约', '발키리·서약'],
+    ['御神装·勿忘', '현신화·물망초'],
+    ['逆神巫女', '역신 무녀'],
+    ['雷电女王的鬼铠', '뇌전 여왕의 귀신 갑주'],
+    ['异度黑核侵蚀', '이도 흑핵 침식'],
 
     // 최신 캐릭터 카드 설명: 문장 단위 번역
     ['特色：机械属性的角色，使用龙爪和龙翼配合作战，附加点燃积蓄效果，为队伍提供增益',
@@ -502,6 +516,20 @@
   ]);
 
   const INLINE_NAMES = [
+    ['第六夜想曲', '제6 야상곡'],
+    ['炽翎', '치령'],
+    ['影骑士·月轮', '영기사·월륜'],
+    ['女武神·迅羽', '발키리·해청'],
+    ['圣仪装·今样', '성결 예장·금양'],
+    ['神恩颂歌', '신은송가'],
+    ['真炎幸魂', '진염행혼'],
+    ['银狼的黎明', '은랑의 여명'],
+    ['樱火轮舞', '앵화윤무'],
+    ['女武神·誓约', '발키리·서약'],
+    ['御神装·勿忘', '현신화·물망초'],
+    ['逆神巫女', '역신 무녀'],
+    ['雷电女王的鬼铠', '뇌전 여왕의 귀신 갑주'],
+    ['异度黑核侵蚀', '이도 흑핵 침식'],
     ['领域装·白练', '투예복·백련'],
     ['驱动装·山吹', '기동장갑·황매화'],
     ['脉冲装·绯红', '펄스 슈트·비홍'],
@@ -1077,6 +1105,28 @@
     };
   }
 
+  const REVIEWED_OUTPUT_EXACT = new Map([
+    ['여섯 번째 밤 삼', '제6 야상곡'],
+    ['여섯 번째 밤 상', '제6 야상곡'],
+    ['Sixth Night Serenade', '제6 야상곡'],
+    ['치 링', '치령'],
+    ['새도우 나이트 문 휠', '영기사·월륜'],
+    ['Shadow Knight Moon Wheel', '영기사·월륜'],
+    ['발키리 Xun Yu', '발키리·해청'],
+    ['Valkyrie Xun Yu', '발키리·해청'],
+    ['거룩한 의식복 - 오늘', '성결 예장·금양'],
+    ['하나님의 은혜', '신은송가'],
+    ['진정한 불꽃 쌍둥이의 영혼', '진염행혼'],
+    ['실버 늑대의 새벽', '은랑의 여명'],
+    ['사쿠라 파이어 휠 댄스', '앵화윤무'],
+    ['발키리·맹세', '발키리·서약'],
+    ['Royal God 복장 - 잊지 마세요', '현신화·물망초'],
+    ['신에 대한 미코', '역신 무녀'],
+    ['천둥의 여왕의 유령 갑옷', '뇌전 여왕의 귀신 갑주'],
+    ['Xenometric Black Nucleus 침식', '이도 흑핵 침식'],
+    ['Xenometric Black Nucleus', '이도 흑핵 침식'],
+  ]);
+
   const POST_EDIT_GLOSSARY = [
     // 세계관 핵심 용어
     ['律者', '율자', ['변호사', '법률가', 'Lawr', 'lawr', 'Lawyer', 'lawyer', 'Herrscher', 'Herscher', '법칙']],
@@ -1179,6 +1229,9 @@
   function postEditTranslation(source, translated) {
     let out = String(translated ?? '');
     if (!out) return out;
+
+    const reviewedExact = REVIEWED_OUTPUT_EXACT.get(out.trim());
+    if (reviewedExact) return reviewedExact;
 
     for (const [sourceTerm, good, badForms] of POST_EDIT_GLOSSARY) {
       const sourceCount = source.split(sourceTerm).length - 1;
