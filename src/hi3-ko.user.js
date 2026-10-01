@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.8.0
+// @version      0.8.1
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.8.0';
+  const VERSION = '0.8.1';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -32,6 +32,7 @@
   const CACHE_DB_VERSION = 1;
   const CACHE_STORE = 'translations';
   const FULL_PROGRESS_KEY = 'silvermu-hi3-ko-full-progress-v1';
+  const CACHE_MIGRATION_KEY = 'silvermu-hi3-ko-cache-migration-version';
   const FULL_DATASETS = {
     characters: '/data/db/bh3/characters.json',
     weapons: '/data/db/bh3/weapons.json',
@@ -238,6 +239,13 @@
     ['享乐狂宴·邀影', '향락·광란의 연회'],
     ['破弃孤光·逐影', '파기·등불의 그림자'],
     ['月下誓约·予爱以心', '월하의 서약·핏빛 사랑'],
+    ['雪地狙击', '설원 저격수'],
+    ['女武神·游侠', '발키리·레인저'],
+    ['女武神·强袭', '발키리·스트라이크'],
+    ['女武神·战车', '발키리·채리엇'],
+    ['圣女祈祷', '성녀의 기도'],
+    ['白骑士·月光', '백기사·월광'],
+    ['影舞冲击', '그림자의 춤'],
 
     // 최신 캐릭터 카드 설명: 문장 단위 번역
     ['特色：机械属性的角色，使用龙爪和龙翼配合作战，附加点燃积蓄效果，为队伍提供增益',
@@ -932,6 +940,19 @@
     ['麻痹', '마비', ['Paralysis']],
     ['脆弱', '취약', ['Impair', '약화']],
     ['会心', '회심', ['Crit', '크리티컬']],
+
+    // 자주 보이는 장비/캐릭터 표기 오역
+    ['圣遗物', '성유물', ['거룩한 유물', '성스러운 유물', 'Holy Relic', 'Holy Relics']],
+    ['驱动装', '구동 장갑', ['드라이버', 'Driver']],
+    ['白骑士·月光', '백기사·월광', ['화이트 나이트 문라이트', 'White Knight Moonlight']],
+    ['女武神·游侠', '발키리·레인저', ['발키리 레인저', 'Valkyrie Ranger']],
+    ['女武神·强袭', '발키리·스트라이크', ['발키리 스트라이크', 'Valkyrie Strike']],
+    ['女武神·战车', '발키리·채리엇', ['발키리 전차', 'Valkyrie Chariot']],
+    ['雪地狙击', '설원 저격수', ['스노우 스나이퍼', 'Snowy Sniper']],
+    ['圣女祈祷', '성녀의 기도', ['성도 기도', 'Saint Prayer']],
+    ['影舞冲击', '그림자의 춤', ['그림자 댄스 임팩트', 'Shadow Dash']],
+    ['脉冲装·绯红', '펄스 슈트·홍련', ['펄스 복장', 'Pulse Suit Crimson']],
+    ['领域装·白练', '발키리·레인저', ['영역 장갑', 'Domain Suit White']],
   ];
 
   function replaceLimited(text, bad, good, limit) {
@@ -975,8 +996,10 @@
     return out;
   }
 
-  async function rewriteCacheWithPostEdit() {
-    setAiStatus('기존 번역 캐시 용어 교정 중…', true);
+  async function rewriteCacheWithPostEdit(options = {}) {
+    const { silent = false } = options;
+    if (!silent) setAiStatus('기존 번역 캐시 용어 교정 중…', true);
+
     try {
       const rows = await cacheGetAll();
       const changed = [];
@@ -997,16 +1020,41 @@
         await cachePutMany(changed.slice(i, i + chunk), 'post-edited');
       }
 
-      setAiStatus('기존 캐시 용어 교정 완료: ' + changed.length + '개');
-      window.alert(
-        '기존 AI 번역 캐시의 붕괴3rd 용어를 교정했습니다.\n' +
-        '수정된 번역: ' + changed.length + '개\n\n' +
-        '페이지를 새로고침하면 적용됩니다.'
-      );
+      if (!silent) {
+        setAiStatus('기존 캐시 용어 교정 완료: ' + changed.length + '개');
+        window.alert(
+          '기존 AI 번역 캐시의 붕괴3rd 용어를 교정했습니다.\n' +
+          '수정된 번역: ' + changed.length + '개\n\n' +
+          '페이지를 새로고침하면 적용됩니다.'
+        );
+      }
+
+      return changed.length;
     } catch (error) {
       console.error('[silvermu-hi3-ko] post edit failed', error);
-      setAiStatus('캐시 교정 실패: ' + (error?.message || error));
+      if (!silent) setAiStatus('캐시 교정 실패: ' + (error?.message || error));
+      return 0;
     }
+  }
+
+  async function autoMigrateCachedTranslations() {
+    const migrated = localStorage.getItem(CACHE_MIGRATION_KEY);
+    if (migrated === VERSION) return false;
+
+    setAiStatus('기존 번역 캐시를 v' + VERSION + ' 기준으로 정리 중…', true);
+    const changed = await rewriteCacheWithPostEdit({ silent: true });
+    localStorage.setItem(CACHE_MIGRATION_KEY, VERSION);
+
+    // 기존 화면에 이미 출력된 기계번역은 중국어가 사라져 있어 재스캔으로 잡히지 않는다.
+    // 캐시를 갱신한 뒤 딱 한 번 새로고침하여 원문->새 캐시 흐름을 다시 태운다.
+    if (changed > 0) {
+      setAiStatus('기존 번역 ' + changed + '개 정리 완료 · 화면 다시 불러오는 중…', true);
+      window.setTimeout(() => location.reload(), 350);
+      return true;
+    }
+
+    setAiStatus('');
+    return false;
   }
 
   async function ensureTranslator() {
@@ -1766,7 +1814,7 @@
     }
   }
 
-  function activateTranslation() {
+  async function activateTranslation() {
     const root = document.documentElement || document;
 
     // 초기 렌더링 완료 후 1회만 전체 번역.
@@ -1799,6 +1847,11 @@
     });
 
     addBadge();
+
+    // 버전 변경 시 기존 기계번역 캐시를 먼저 정리하고, 필요하면 1회 자동 새로고침.
+    const reloadingForMigration = await autoMigrateCachedTranslations();
+    if (reloadingForMigration) return;
+
     aiEnabled = localStorage.getItem(AI_ENABLED_KEY) === '1';
     updateAiButton();
 
