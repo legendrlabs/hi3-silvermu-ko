@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.3
+
+- AI/KO/상태창 플로팅 UI 전체를 Shadow DOM으로 격리
+- 원본 silvermu CSS/애니메이션/전환 효과의 영향을 받지 않도록 차단
+- 좌측 하단 배치 유지
+- animation/transition 비활성화 및 contain/isolation 적용
+- 원본 사이트 플로팅 UI와의 스타일 충돌 및 깜빡임 완화
+
 ## 0.8.2
 
 - AI/KO 플로팅 버튼을 우측 하단에서 좌측 하단으로 이동
