@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.8.2
+// @version      0.8.3
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.8.2';
+  const VERSION = '0.8.3';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -27,6 +27,8 @@
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
   const AI_BUTTON_ID = 'silvermu-hi3-ko-ai-button';
   const AI_STATUS_ID = 'silvermu-hi3-ko-ai-status';
+  const UI_HOST_ID = 'silvermu-hi3-ko-ui-host';
+  let floatingUiRoot = null;
   const AI_ENABLED_KEY = 'silvermu-hi3-ko-ai-enabled';
   const CACHE_DB_NAME = 'silvermu-hi3-ko-cache';
   const CACHE_DB_VERSION = 1;
@@ -740,8 +742,92 @@
   const aiJobs = new Map();
   const aiQueue = [];
 
+  function ensureFloatingUiRoot() {
+    if (floatingUiRoot?.isConnected) return floatingUiRoot;
+
+    let host = document.getElementById(UI_HOST_ID);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = UI_HOST_ID;
+
+      // 호스트 자체는 화면을 차지하지 않고, Shadow DOM 내부의 fixed 요소만 표시한다.
+      Object.assign(host.style, {
+        all: 'initial',
+        position: 'fixed',
+        left: '0',
+        top: '0',
+        width: '0',
+        height: '0',
+        margin: '0',
+        padding: '0',
+        border: '0',
+        zIndex: '2147483647',
+        pointerEvents: 'none',
+        contain: 'style',
+        isolation: 'isolate',
+      });
+
+      document.documentElement.appendChild(host);
+    }
+
+    floatingUiRoot = host.shadowRoot || host.attachShadow({ mode: 'open' });
+
+    if (!floatingUiRoot.querySelector('style[data-hi3-ko-ui]')) {
+      const style = document.createElement('style');
+      style.dataset.hi3KoUi = '1';
+      style.textContent = `
+        :host {
+          all: initial !important;
+        }
+
+        button {
+          appearance: none !important;
+          -webkit-appearance: none !important;
+          box-sizing: border-box !important;
+          margin: 0 !important;
+          outline: none !important;
+          text-transform: none !important;
+          letter-spacing: normal !important;
+          white-space: nowrap !important;
+          user-select: none !important;
+          -webkit-user-select: none !important;
+          transition: none !important;
+          animation: none !important;
+          filter: none !important;
+        }
+
+        #${AI_BUTTON_ID},
+        #${BADGE_ID} {
+          pointer-events: auto !important;
+          transform: translateZ(0) !important;
+          will-change: transform !important;
+          backface-visibility: hidden !important;
+          -webkit-backface-visibility: hidden !important;
+          contain: layout style paint !important;
+        }
+
+        #${AI_STATUS_ID} {
+          pointer-events: none !important;
+          transform: translateZ(0) !important;
+          will-change: transform !important;
+          backface-visibility: hidden !important;
+          -webkit-backface-visibility: hidden !important;
+          contain: layout style paint !important;
+        }
+      `;
+      floatingUiRoot.appendChild(style);
+    }
+
+    return floatingUiRoot;
+  }
+
+  function getFloatingUiElement(id) {
+    const root = floatingUiRoot || document.getElementById(UI_HOST_ID)?.shadowRoot;
+    return root?.getElementById(id) || null;
+  }
+
   function setAiStatus(text, busy = false) {
-    const el = document.getElementById(AI_STATUS_ID);
+    const el = getFloatingUiElement(AI_STATUS_ID);
     if (!el) return;
     el.textContent = text;
     el.style.display = text ? 'block' : 'none';
@@ -1267,7 +1353,7 @@
   }
 
   function updateAiButton() {
-    const btn = document.getElementById(AI_BUTTON_ID);
+    const btn = getFloatingUiElement(AI_BUTTON_ID);
     if (!btn) return;
     btn.textContent = aiEnabled ? 'AI✓' : 'AI';
     btn.title = aiEnabled
@@ -1276,7 +1362,8 @@
   }
 
   function addAiButton() {
-    if (document.getElementById(AI_BUTTON_ID)) return;
+    const uiRoot = ensureFloatingUiRoot();
+    if (getFloatingUiElement(AI_BUTTON_ID)) return;
 
     const btn = document.createElement('button');
     btn.id = AI_BUTTON_ID;
@@ -1301,6 +1388,9 @@
       transform: 'translateZ(0)',
       willChange: 'transform',
       backfaceVisibility: 'hidden',
+      animation: 'none',
+      transition: 'none',
+      contain: 'layout style paint',
     });
 
     btn.addEventListener('click', () => {
@@ -1312,7 +1402,7 @@
       void buildFullTranslationPack();
     });
 
-    document.documentElement.appendChild(btn);
+    uiRoot.appendChild(btn);
     updateAiButton();
 
     const status = document.createElement('div');
@@ -1337,8 +1427,11 @@
       transform: 'translateZ(0)',
       willChange: 'transform',
       backfaceVisibility: 'hidden',
+      animation: 'none',
+      transition: 'none',
+      contain: 'layout style paint',
     });
-    document.documentElement.appendChild(status);
+    uiRoot.appendChild(status);
   }
 
   function collectChineseStrings(value, out, seen = new WeakSet()) {
@@ -1751,7 +1844,8 @@
   }
 
   function addBadge() {
-    if (document.getElementById(BADGE_ID)) return;
+    const uiRoot = ensureFloatingUiRoot();
+    if (getFloatingUiElement(BADGE_ID)) return;
     const badge = document.createElement('button');
     badge.id = BADGE_ID;
     badge.type = 'button';
@@ -1777,13 +1871,16 @@
       transform: 'translateZ(0)',
       willChange: 'transform',
       backfaceVisibility: 'hidden',
+      animation: 'none',
+      transition: 'none',
+      contain: 'layout style paint',
     });
     badge.addEventListener('click', () => setEnabled(false));
     badge.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       void copyDiagnosticReport();
     });
-    document.documentElement.appendChild(badge);
+    uiRoot.appendChild(badge);
     addAiButton();
   }
 
