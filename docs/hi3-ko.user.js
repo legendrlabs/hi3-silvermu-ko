@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.8.1
+// @version      0.8.2
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.8.1';
+  const VERSION = '0.8.2';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -1283,7 +1283,8 @@
     btn.type = 'button';
     Object.assign(btn.style, {
       position: 'fixed',
-      right: '62px',
+      left: '14px',
+      right: 'auto',
       bottom: '14px',
       zIndex: '2147483647',
       minWidth: '42px',
@@ -1296,6 +1297,10 @@
       font: '600 13px/1 system-ui, sans-serif',
       cursor: 'pointer',
       opacity: '0.88',
+      pointerEvents: 'auto',
+      transform: 'translateZ(0)',
+      willChange: 'transform',
+      backfaceVisibility: 'hidden',
     });
 
     btn.addEventListener('click', () => {
@@ -1314,7 +1319,8 @@
     status.id = AI_STATUS_ID;
     Object.assign(status.style, {
       position: 'fixed',
-      right: '14px',
+      left: '14px',
+      right: 'auto',
       bottom: '54px',
       zIndex: '2147483647',
       display: 'none',
@@ -1327,6 +1333,10 @@
       font: '12px/1.45 system-ui, sans-serif',
       opacity: '0.94',
       boxShadow: '0 3px 18px rgba(0,0,0,.2)',
+      pointerEvents: 'none',
+      transform: 'translateZ(0)',
+      willChange: 'transform',
+      backfaceVisibility: 'hidden',
     });
     document.documentElement.appendChild(status);
   }
@@ -1749,7 +1759,8 @@
     badge.title = '한국어 패치 v' + VERSION + ' · 클릭: 원문으로 전환 · 우클릭: 진단 보고서 복사';
     Object.assign(badge.style, {
       position: 'fixed',
-      right: '14px',
+      left: '66px',
+      right: 'auto',
       bottom: '14px',
       zIndex: '2147483647',
       minWidth: '42px',
@@ -1762,6 +1773,10 @@
       font: '600 13px/1 system-ui, sans-serif',
       cursor: 'pointer',
       opacity: '0.88',
+      pointerEvents: 'auto',
+      transform: 'translateZ(0)',
+      willChange: 'transform',
+      backfaceVisibility: 'hidden',
     });
     badge.addEventListener('click', () => setEnabled(false));
     badge.addEventListener('contextmenu', (event) => {
