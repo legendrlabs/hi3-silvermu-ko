@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.2
+
+- AI/KO 플로팅 버튼을 우측 하단에서 좌측 하단으로 이동
+- AI 버튼은 좌측 14px, KO 버튼은 좌측 66px에 고정
+- AI 상태 팝업도 좌측 하단으로 이동
+- 원본 사이트 플로팅 UI와 겹침을 피하도록 배치 변경
+- `pointer-events`, `translateZ(0)`, `will-change`, `backface-visibility` 적용으로 깜빡임 완화
+
 ## 0.8.1
 
 - v0.8.0 용어 교정이 기존 화면에 바로 반영되지 않던 문제 수정
