@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.9.1
+// @version      0.10.0
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,13 +19,14 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.9.1';
+  const VERSION = '0.10.0';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
   const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEXTAREA']);
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
   const AI_BUTTON_ID = 'silvermu-hi3-ko-ai-button';
+  const QA_BUTTON_ID = 'silvermu-hi3-ko-qa-button';
   const AI_STATUS_ID = 'silvermu-hi3-ko-ai-status';
   const UI_HOST_ID = 'silvermu-hi3-ko-ui-host';
   let floatingUiRoot = null;
@@ -271,6 +272,23 @@
     ['逆神巫女', '역신 무녀'],
     ['雷电女王的鬼铠', '뇌전 여왕의 귀신 갑주'],
     ['异度黑核侵蚀', '이도 흑핵 침식'],
+    ['彼岸双生', '피안쌍생'],
+    ['幻海梦蝶', '환해의 꿈나비'],
+    ['蓝莓特攻', '블루베리 특공'],
+    ['黯蔷薇', '검은 장미'],
+    ['真红骑士·月蚀', '진홍의 기사·월식'],
+    ['原罪猎人', '원죄 사냥꾼'],
+    ['月下初拥', '월하초옹'],
+    ['理之律者', '이치의 율자'],
+    ['空之律者', '공간의 율자'],
+    ['失落迷迭', '로스트 로즈마리'],
+    ['魇夜星渊', '염야성연'],
+    ['白夜执事', '백야집사'],
+    ['苍骑士·月魂', '창기사·월혼'],
+    ['猎袭装·影铁', '헌트 슈트·팬텀 아이언'],
+    ['彗星驱动', '혜성 구동'],
+    ['雾都迅羽', '안개성의 해청'],
+    ['狂热蓝调Δ', '열광 템포Δ'],
 
     // 최신 캐릭터 카드 설명: 문장 단위 번역
     ['特色：机械属性的角色，使用龙爪和龙翼配合作战，附加点燃积蓄效果，为队伍提供增益',
@@ -516,6 +534,23 @@
   ]);
 
   const INLINE_NAMES = [
+    ['彼岸双生', '피안쌍생'],
+    ['幻海梦蝶', '환해의 꿈나비'],
+    ['蓝莓特攻', '블루베리 특공'],
+    ['黯蔷薇', '검은 장미'],
+    ['真红骑士·月蚀', '진홍의 기사·월식'],
+    ['原罪猎人', '원죄 사냥꾼'],
+    ['月下初拥', '월하초옹'],
+    ['理之律者', '이치의 율자'],
+    ['空之律者', '공간의 율자'],
+    ['失落迷迭', '로스트 로즈마리'],
+    ['魇夜星渊', '염야성연'],
+    ['白夜执事', '백야집사'],
+    ['苍骑士·月魂', '창기사·월혼'],
+    ['猎袭装·影铁', '헌트 슈트·팬텀 아이언'],
+    ['彗星驱动', '혜성 구동'],
+    ['雾都迅羽', '안개성의 해청'],
+    ['狂热蓝调Δ', '열광 템포Δ'],
     ['第六夜想曲', '제6 야상곡'],
     ['炽翎', '치령'],
     ['影骑士·月轮', '영기사·월륜'],
@@ -886,6 +921,10 @@
 
   let translator = null;
   let translatorCreating = null;
+  let backTranslator = null;
+  let backTranslatorCreating = null;
+  let qaRunning = false;
+  let qaCancelled = false;
   let aiEnabled = false;
   let aiProcessorRunning = false;
   let fullBuildCancelled = false;
@@ -947,6 +986,7 @@
         }
 
         #${AI_BUTTON_ID},
+        #${QA_BUTTON_ID},
         #${BADGE_ID} {
           pointer-events: auto !important;
           transform: translateZ(0) !important;
@@ -1106,6 +1146,16 @@
   }
 
   const REVIEWED_OUTPUT_EXACT = new Map([
+    ['다른 쪽 쌍둥이', '피안쌍생'],
+    ['판타지 바다 꿈 나비', '환해의 꿈나비'],
+    ['블루베리 공격', '블루베리 특공'],
+    ['다크 로즈', '검은 장미'],
+    ['전정한 레드 나이트 문 일식', '진홍의 기사·월식'],
+    ['오리지널 신 헌터', '원죄 사냥꾼'],
+    ['달 아래에서 시작합니다', '월하초옹'],
+    ['하늘의 로어', '공간의 율자'],
+    ['킹 나이트 문 소울', '창기사·월혼'],
+    ['사냥 부착물 - 그림자 철', '헌트 슈트·팬텀 아이언'],
     ['여섯 번째 밤 삼', '제6 야상곡'],
     ['여섯 번째 밤 상', '제6 야상곡'],
     ['Sixth Night Serenade', '제6 야상곡'],
@@ -1201,7 +1251,7 @@
 
     // 자주 보이는 장비/캐릭터 표기 오역
     ['圣遗物', '성유물', ['거룩한 유물', '성스러운 유물', 'Holy Relic', 'Holy Relics']],
-    ['驱动装', '구동 장갑', ['드라이버', 'Driver']],
+    ['驱动装', '기동장갑', ['드라이버', 'Driver']],
     ['白骑士·月光', '백기사·월광', ['화이트 나이트 문라이트', 'White Knight Moonlight']],
     ['女武神·游侠', '발키리·레인저', ['발키리 레인저', 'Valkyrie Ranger']],
     ['女武神·强袭', '발키리·스트라이크', ['발키리 스트라이크', 'Valkyrie Strike']],
@@ -1209,8 +1259,8 @@
     ['雪地狙击', '설원 저격수', ['스노우 스나이퍼', 'Snowy Sniper']],
     ['圣女祈祷', '성녀의 기도', ['성도 기도', 'Saint Prayer']],
     ['影舞冲击', '그림자의 춤', ['그림자 댄스 임팩트', 'Shadow Dash']],
-    ['脉冲装·绯红', '펄스 슈트·홍련', ['펄스 복장', 'Pulse Suit Crimson']],
-    ['领域装·白练', '발키리·레인저', ['영역 장갑', 'Domain Suit White']],
+    ['脉冲装·绯红', '펄스 슈트·비홍', ['펄스 복장', 'Pulse Suit Crimson']],
+    ['领域装·白练', '투예복·백련', ['영역 장갑', 'Domain Suit White']],
   ];
 
   function replaceLimited(text, bad, good, limit) {
@@ -1346,6 +1396,428 @@
     });
 
     return translatorCreating;
+  }
+
+  async function ensureBackTranslator() {
+    if (backTranslator) return backTranslator;
+    if (backTranslatorCreating) return backTranslatorCreating;
+
+    const API = getTranslatorApi();
+    if (!API) throw new Error('Chrome Translator API를 찾을 수 없습니다.');
+
+    backTranslatorCreating = API.create({
+      sourceLanguage: 'ko',
+      targetLanguage: 'zh',
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => {
+          const pct = Math.round((e.loaded || 0) * 100);
+          setAiStatus('한→중 검수 모델 준비 중… ' + pct + '%', true);
+        });
+      },
+    }).then((t) => {
+      backTranslator = t;
+      backTranslatorCreating = null;
+      return t;
+    }).catch((error) => {
+      backTranslatorCreating = null;
+      throw error;
+    });
+
+    return backTranslatorCreating;
+  }
+
+  function normalizeForQa(text) {
+    return String(text || '')
+      .replace(/[\s\p{P}\p{S}]+/gu, '')
+      .toLowerCase();
+  }
+
+  function makeNgramSet(text, n) {
+    const clean = normalizeForQa(text);
+    const set = new Set();
+    if (!clean) return set;
+    if (clean.length < n) {
+      set.add(clean);
+      return set;
+    }
+    for (let i = 0; i <= clean.length - n; i += 1) {
+      set.add(clean.slice(i, i + n));
+    }
+    return set;
+  }
+
+  function jaccardSet(a, b) {
+    if (!a.size && !b.size) return 1;
+    if (!a.size || !b.size) return 0;
+    let inter = 0;
+    for (const item of a) if (b.has(item)) inter += 1;
+    return inter / (a.size + b.size - inter);
+  }
+
+  function semanticSimilarityZh(a, b) {
+    const uni = jaccardSet(makeNgramSet(a, 1), makeNgramSet(b, 1));
+    const bi = jaccardSet(makeNgramSet(a, 2), makeNgramSet(b, 2));
+    return 0.4 * uni + 0.6 * bi;
+  }
+
+  function extractNumberTokens(text) {
+    return (String(text).match(/\d+(?:\.\d+)?%?/g) || []).sort();
+  }
+
+  function sameNumberTokens(a, b) {
+    return JSON.stringify(extractNumberTokens(a)) === JSON.stringify(extractNumberTokens(b));
+  }
+
+  const QA_ALLOWED_LATIN = new Set([
+    'QTE','SP','HP','ATK','DEF','SS','SSS','EX','DLC','CG','ID','AI',
+    'Type','TYPE','BINGO','KFC','CN','S','A','B','C'
+  ]);
+
+  const QA_BAD_SHORT_PHRASES = [
+    '다른 쪽', '판타지 바다', '하늘의 로어', '에서 시작합니다',
+    '유령 갑옷', '영혼 각성', 'Royal God', 'Xun Yu', 'Xenometric',
+    'Original Sin Hunter', 'Shadow Knight', 'White Knight', 'Blueberry Attack'
+  ];
+
+  function staticReviewedTranslation(source) {
+    if (FEATURE_EXACT.has(source)) return FEATURE_EXACT.get(source);
+    if (EXACT.has(source)) return EXACT.get(source);
+    return null;
+  }
+
+  function qaHeuristic(source, candidate) {
+    let score = 100;
+    const reasons = [];
+    const out = String(candidate || '').trim();
+    const src = String(source || '').trim();
+
+    if (!out) return { score: 0, reasons: ['빈 번역'] };
+
+    if (HAN_RE.test(out)) {
+      score -= 28;
+      reasons.push('중국어 잔존');
+    }
+
+    if (!sameNumberTokens(src, out)) {
+      score -= 22;
+      reasons.push('숫자/퍼센트 불일치');
+    }
+
+    let glossaryPenalty = 0;
+    for (const [sourceTerm, good] of POST_EDIT_GLOSSARY) {
+      if (src.includes(sourceTerm) && !out.includes(good)) {
+        glossaryPenalty += 8;
+      }
+    }
+    if (glossaryPenalty) {
+      score -= Math.min(28, glossaryPenalty);
+      reasons.push('용어집 불일치');
+    }
+
+    const latin = out.match(/[A-Za-z][A-Za-z0-9_-]{2,}/g) || [];
+    const suspiciousLatin = latin.filter((token) =>
+      !QA_ALLOWED_LATIN.has(token) && !src.toLowerCase().includes(token.toLowerCase())
+    );
+    if (suspiciousLatin.length) {
+      score -= Math.min(20, suspiciousLatin.length * 5);
+      reasons.push('불필요한 영문 혼입');
+    }
+
+    const srcLen = Math.max(1, normalizeForQa(src).length);
+    const outLen = normalizeForQa(out).length;
+    const ratio = outLen / srcLen;
+    if (ratio < 0.32 || ratio > 3.6) {
+      score -= 20;
+      reasons.push('길이 비정상');
+    } else if (ratio < 0.48 || ratio > 2.8) {
+      score -= 8;
+      reasons.push('길이 편차');
+    }
+
+    const isShortTitle = srcLen <= 22 && !/[。！？；,.!?]/.test(src);
+    if (isShortTitle) {
+      for (const bad of QA_BAD_SHORT_PHRASES) {
+        if (out.includes(bad)) {
+          score -= 22;
+          reasons.push('직역형 제목');
+          break;
+        }
+      }
+      if (out.split(/\s+/).length >= 6) {
+        score -= 10;
+        reasons.push('제목 과도한 문장화');
+      }
+    }
+
+    if (/\b(?:the|of|and|with|from|to)\b/i.test(out) && !/[A-Za-z]{3,}/.test(src)) {
+      score -= 8;
+      reasons.push('영어 문장 잔존');
+    }
+
+    return { score: Math.max(0, score), reasons };
+  }
+
+  async function freshTranslateForQa(source, sentenceWise = false) {
+    const reviewed = staticReviewedTranslation(source);
+    if (reviewed) return reviewed;
+
+    const t = await ensureTranslator();
+    const protectedText = protectKnownNames(source);
+
+    if (!sentenceWise || source.length < 45) {
+      const raw = await withTimeout(t.translate(protectedText.text), 35000, 'QA fresh translate');
+      return postEditTranslation(source, protectedText.restore(raw));
+    }
+
+    const parts = protectedText.text.split(/([。！？；\n]+)/).filter(Boolean);
+    const out = [];
+    for (const part of parts) {
+      if (/^[。！？；\n]+$/.test(part)) {
+        out.push(part);
+        continue;
+      }
+      const translated = await withTimeout(t.translate(part), 35000, 'QA sentence translate');
+      out.push(translated);
+    }
+    return postEditTranslation(source, protectedText.restore(out.join('')));
+  }
+
+  async function backTranslateForQa(korean) {
+    const t = await ensureBackTranslator();
+    return await withTimeout(t.translate(korean), 35000, 'QA back translate');
+  }
+
+  async function qaCandidateScore(source, candidate, useBackTranslation = true) {
+    const heuristic = qaHeuristic(source, candidate);
+    let semantic = null;
+    let finalScore = heuristic.score;
+
+    if (useBackTranslation) {
+      try {
+        const back = await backTranslateForQa(candidate);
+        semantic = semanticSimilarityZh(source, back);
+        finalScore += semantic * 35;
+      } catch (error) {
+        console.warn('[silvermu-hi3-ko] back translation failed', error);
+      }
+    }
+
+    return {
+      candidate,
+      heuristic: heuristic.score,
+      reasons: heuristic.reasons,
+      semantic,
+      finalScore,
+    };
+  }
+
+  async function reviewOneTranslation(source, current) {
+    const reviewed = staticReviewedTranslation(source);
+    if (reviewed) {
+      return {
+        source,
+        before: current,
+        after: reviewed,
+        changed: reviewed !== current,
+        confidence: 1,
+        reasons: ['검수 고정 번역'],
+      };
+    }
+
+    const currentFixed = postEditTranslation(source, current);
+    const cheap = qaHeuristic(source, currentFixed);
+
+    // 고득점 문장은 역번역까지 하지 않고 통과시킨다.
+    if (cheap.score >= 92 && !HAN_RE.test(currentFixed)) {
+      return {
+        source,
+        before: current,
+        after: currentFixed,
+        changed: currentFixed !== current,
+        confidence: 0.92,
+        reasons: cheap.reasons,
+      };
+    }
+
+    const candidates = [currentFixed];
+    try {
+      const fresh = await freshTranslateForQa(source, false);
+      if (fresh && !candidates.includes(fresh)) candidates.push(fresh);
+    } catch {}
+
+    if (source.length >= 45) {
+      try {
+        const segmented = await freshTranslateForQa(source, true);
+        if (segmented && !candidates.includes(segmented)) candidates.push(segmented);
+      } catch {}
+    }
+
+    const scored = [];
+    for (const candidate of candidates) {
+      scored.push(await qaCandidateScore(source, candidate, true));
+    }
+    scored.sort((a, b) => b.finalScore - a.finalScore);
+
+    const best = scored[0];
+    const second = scored[1];
+    const confidence = second
+      ? Math.max(0, Math.min(1, (best.finalScore - second.finalScore + 15) / 30))
+      : Math.max(0, Math.min(1, best.finalScore / 125));
+
+    return {
+      source,
+      before: current,
+      after: best.candidate,
+      changed: best.candidate !== current,
+      confidence,
+      reasons: best.reasons,
+      score: best.finalScore,
+      semantic: best.semantic,
+    };
+  }
+
+  function getCurrentDatasetName() {
+    const cat = new URL(location.href).searchParams.get('cat') || 'characters';
+    const aliases = {
+      characters: 'characters',
+      weapons: 'weapons',
+      stigmata: 'stigmata',
+      elfs: 'elfs',
+      materials: 'materials',
+      tasks: 'tasks',
+      abyss: 'abyss',
+      shops: 'shops',
+      cg: 'cg',
+    };
+    return aliases[cat] || 'characters';
+  }
+
+  async function runQaReview(scope = 'current') {
+    if (qaRunning) {
+      setAiStatus('자동검수가 이미 실행 중입니다.');
+      return;
+    }
+
+    qaRunning = true;
+    qaCancelled = false;
+    updateQaButton();
+
+    const unresolved = [];
+    let changed = 0;
+    let reviewedCount = 0;
+
+    try {
+      // 사용자 클릭 직후 양방향 번역기를 먼저 준비한다.
+      await ensureTranslator();
+      await ensureBackTranslator();
+
+      const rows = await cacheGetAll();
+      const rowMap = new Map(rows.map((row) => [row.source, row]));
+      let sources = [];
+
+      if (scope === 'current') {
+        const name = getCurrentDatasetName();
+        const path = FULL_DATASETS[name];
+        setAiStatus('QA: ' + name + ' 원문 읽는 중…', true);
+        sources = await fetchSingleDatasetStrings(name, path);
+      } else {
+        setAiStatus('QA: 전체 데이터에서 의심 번역 선별 중…', true);
+        const set = new Set();
+        for (const [name, path] of Object.entries(FULL_DATASETS)) {
+          if (qaCancelled) break;
+          const strings = await fetchSingleDatasetStrings(name, path);
+          for (const source of strings) set.add(source);
+        }
+        sources = [...set];
+      }
+
+      const targets = [];
+      for (const source of sources) {
+        const row = rowMap.get(source);
+        if (!row?.translated) continue;
+        if (row.method === 'static' || row.method === 'qa-reviewed') continue;
+
+        const fixed = postEditTranslation(source, row.translated);
+        const check = qaHeuristic(source, fixed);
+        const srcLen = normalizeForQa(source).length;
+        const isShortTitle = srcLen <= 22 && !/[。！？；,.!?]/.test(source);
+
+        // 설명은 낮은 점수만, 짧은 제목은 조금 더 넓게 검수한다.
+        if (check.score < 88 || (isShortTitle && check.score < 96)) {
+          targets.push({ source, translated: fixed });
+        }
+      }
+
+      if (!targets.length) {
+        setAiStatus('QA: 의심 번역이 없습니다.');
+        window.setTimeout(() => setAiStatus(''), 1500);
+        return;
+      }
+
+      for (let i = 0; i < targets.length; i += 1) {
+        if (qaCancelled) break;
+
+        const item = targets[i];
+        setAiStatus(
+          '자동검수 ' + (i + 1) + '/' + targets.length +
+          ' · 수정 ' + changed + '개 · 보류 ' + unresolved.length + '개',
+          true
+        );
+
+        const result = await reviewOneTranslation(item.source, item.translated);
+        reviewedCount += 1;
+
+        // 확신이 낮으면 자동 교체하지 않는다.
+        if (result.changed && result.confidence >= 0.58) {
+          await cachePutMany([{
+            source: result.source,
+            translated: result.after,
+            method: 'qa-reviewed',
+          }], 'qa-reviewed');
+          changed += 1;
+        } else if ((result.score || 0) < 105 || result.confidence < 0.58) {
+          unresolved.push({
+            source: result.source,
+            current: result.after,
+            confidence: Number((result.confidence || 0).toFixed(3)),
+            score: result.score || null,
+            reasons: result.reasons || [],
+          });
+        }
+
+        await new Promise((resolve) => window.setTimeout(resolve, 10));
+      }
+
+      if (qaCancelled) {
+        setAiStatus('자동검수 취소됨 · 완료분은 저장됨');
+        return;
+      }
+
+      if (unresolved.length) {
+        await exportJson('hi3-ko-qa-unresolved-' + VERSION + '.json', {
+          patchVersion: VERSION,
+          generatedAt: new Date().toISOString(),
+          scope,
+          reviewed: reviewedCount,
+          changed,
+          unresolved,
+        });
+      }
+
+      setAiStatus(
+        '자동검수 완료 · 검사 ' + reviewedCount +
+        '개 · 수정 ' + changed +
+        '개 · 보류 ' + unresolved.length + '개'
+      );
+
+      window.setTimeout(() => location.reload(), 900);
+    } catch (error) {
+      console.error('[silvermu-hi3-ko] QA failed', error);
+      setAiStatus('자동검수 오류: ' + (error?.message || error));
+    } finally {
+      qaRunning = false;
+      updateQaButton();
+    }
   }
 
   async function translateWithAi(source) {
@@ -1536,6 +2008,66 @@
       : '클릭: 현재 화면 전체번역 · 우클릭: 전체 DB 번역/전수검사';
   }
 
+  function updateQaButton() {
+    const btn = getFloatingUiElement(QA_BUTTON_ID);
+    if (!btn) return;
+    btn.textContent = qaRunning ? 'QA…' : 'QA';
+    btn.title = qaRunning
+      ? '자동검수 실행 중 · 클릭하면 취소'
+      : '클릭: 현재 카테고리 자동검수 · 우클릭: 전체 DB 자동검수';
+  }
+
+  function addQaButton() {
+    const uiRoot = ensureFloatingUiRoot();
+    if (getFloatingUiElement(QA_BUTTON_ID)) return;
+
+    const btn = document.createElement('button');
+    btn.id = QA_BUTTON_ID;
+    btn.type = 'button';
+    Object.assign(btn.style, {
+      position: 'fixed',
+      left: '66px',
+      right: 'auto',
+      bottom: '14px',
+      zIndex: '2147483647',
+      minWidth: '42px',
+      height: '32px',
+      padding: '0 10px',
+      border: '1px solid currentColor',
+      borderRadius: '999px',
+      background: 'Canvas',
+      color: 'CanvasText',
+      font: '600 13px/1 system-ui, sans-serif',
+      cursor: 'pointer',
+      opacity: '0.88',
+      pointerEvents: 'auto',
+      transform: 'translateZ(0)',
+      willChange: 'transform',
+      backfaceVisibility: 'hidden',
+      animation: 'none',
+      transition: 'none',
+      contain: 'layout style paint',
+    });
+
+    btn.addEventListener('click', () => {
+      if (qaRunning) {
+        qaCancelled = true;
+        setAiStatus('자동검수 취소 요청됨…', true);
+        return;
+      }
+      void runQaReview('current');
+    });
+
+    btn.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (qaRunning) return;
+      void runQaReview('all');
+    });
+
+    uiRoot.appendChild(btn);
+    updateQaButton();
+  }
+
   function addAiButton() {
     const uiRoot = ensureFloatingUiRoot();
     if (getFloatingUiElement(AI_BUTTON_ID)) return;
@@ -1579,6 +2111,7 @@
 
     uiRoot.appendChild(btn);
     updateAiButton();
+    addQaButton();
 
     const status = document.createElement('div');
     status.id = AI_STATUS_ID;
@@ -2028,7 +2561,7 @@
     badge.title = '한국어 패치 v' + VERSION + ' · 클릭: 원문으로 전환 · 우클릭: 진단 보고서 복사';
     Object.assign(badge.style, {
       position: 'fixed',
-      left: '66px',
+      left: '118px',
       right: 'auto',
       bottom: '14px',
       zIndex: '2147483647',
@@ -2176,6 +2709,12 @@
       setAiStatus('전체 DB 번역 취소 요청됨');
     });
     GM_registerMenuCommand('기존 AI 번역 붕괴3rd 용어 일괄 교정', () => void rewriteCacheWithPostEdit());
+    GM_registerMenuCommand('현재 카테고리 자동검수(QA)', () => void runQaReview('current'));
+    GM_registerMenuCommand('전체 DB 자동검수(QA)', () => void runQaReview('all'));
+    GM_registerMenuCommand('자동검수 취소', () => {
+      qaCancelled = true;
+      setAiStatus('자동검수 취소 요청됨…', true);
+    });
     GM_registerMenuCommand('전수검사 JSON 다시 내보내기 (재번역 없음)', () => void exportFullAuditFromCache());
     GM_registerMenuCommand('현재 번역팩 내보내기', () => void exportTranslationPack());
     GM_registerMenuCommand('AI 번역 캐시 초기화', async () => {
