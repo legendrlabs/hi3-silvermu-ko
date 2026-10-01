@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.9.0
+// @version      0.9.1
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
