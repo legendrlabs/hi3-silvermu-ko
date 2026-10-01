@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         silvermu HI3 한국어 패치
 // @namespace    https://github.com/legendrlabs/hi3-silvermu-ko
-// @version      0.10.0
+// @version      0.10.1
 // @description  silvermu.top 붕괴3rd 데이터베이스 한국어 번역 레이어 + Chrome 로컬 AI 전체 번역/커버리지 검사 도구입니다.
 // @author       Community
 // @match        https://silvermu.top/database/hi3.html*
@@ -19,7 +19,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.10.0';
+  const VERSION = '0.10.1';
   const STORAGE_KEY = 'silvermu-hi3-ko-enabled';
   const BADGE_ID = 'silvermu-hi3-ko-badge';
   const HAN_RE = /[\u3400-\u9FFF]/u;
@@ -1621,40 +1621,81 @@
         changed: reviewed !== current,
         confidence: 1,
         reasons: ['검수 고정 번역'],
+        markReviewed: true,
       };
     }
 
     const currentFixed = postEditTranslation(source, current);
-    const cheap = qaHeuristic(source, currentFixed);
+    const currentHeuristic = qaHeuristic(source, currentFixed);
 
-    // 고득점 문장은 역번역까지 하지 않고 통과시킨다.
-    if (cheap.score >= 92 && !HAN_RE.test(currentFixed)) {
+    // 1차 고속 통과: 이미 충분히 정상적인 번역은 역번역을 하지 않는다.
+    if (currentHeuristic.score >= 92 && !HAN_RE.test(currentFixed)) {
       return {
         source,
         before: current,
         after: currentFixed,
         changed: currentFixed !== current,
-        confidence: 0.92,
-        reasons: cheap.reasons,
+        confidence: 0.94,
+        reasons: currentHeuristic.reasons,
+        score: currentHeuristic.score,
+        markReviewed: true,
       };
     }
 
-    const candidates = [currentFixed];
+    const candidates = [{
+      candidate: currentFixed,
+      heuristic: currentHeuristic.score,
+      reasons: currentHeuristic.reasons,
+    }];
+
     try {
       const fresh = await freshTranslateForQa(source, false);
-      if (fresh && !candidates.includes(fresh)) candidates.push(fresh);
+      if (fresh && !candidates.some((x) => x.candidate === fresh)) {
+        const h = qaHeuristic(source, fresh);
+        candidates.push({ candidate: fresh, heuristic: h.score, reasons: h.reasons });
+      }
     } catch {}
 
-    if (source.length >= 45) {
+    // 장문이며 두 후보 모두 좋지 않을 때만 문장 분할 재번역을 추가한다.
+    const bestCheapNow = Math.max(...candidates.map((x) => x.heuristic));
+    if (source.length >= 60 && bestCheapNow < 84) {
       try {
         const segmented = await freshTranslateForQa(source, true);
-        if (segmented && !candidates.includes(segmented)) candidates.push(segmented);
+        if (segmented && !candidates.some((x) => x.candidate === segmented)) {
+          const h = qaHeuristic(source, segmented);
+          candidates.push({ candidate: segmented, heuristic: h.score, reasons: h.reasons });
+        }
       } catch {}
     }
 
+    candidates.sort((a, b) => b.heuristic - a.heuristic);
+    const cheapBest = candidates[0];
+    const cheapSecond = candidates[1];
+
+    // 휴리스틱 점수 차이가 충분하면 역번역 없이 선택한다.
+    if (
+      cheapBest.heuristic >= 82 &&
+      (!cheapSecond || cheapBest.heuristic - cheapSecond.heuristic >= 12)
+    ) {
+      const confidence = Math.min(0.96, 0.72 + Math.max(0, cheapBest.heuristic - 82) / 70);
+      return {
+        source,
+        before: current,
+        after: cheapBest.candidate,
+        changed: cheapBest.candidate !== current,
+        confidence,
+        reasons: cheapBest.reasons,
+        score: cheapBest.heuristic,
+        markReviewed: confidence >= 0.8,
+      };
+    }
+
+    // 2차 정밀 검수: 정말 애매한 상위 2개 후보에만 역번역을 사용한다.
+    const precisionTargets = candidates.slice(0, 2);
     const scored = [];
-    for (const candidate of candidates) {
-      scored.push(await qaCandidateScore(source, candidate, true));
+    for (const item of precisionTargets) {
+      const full = await qaCandidateScore(source, item.candidate, true);
+      scored.push(full);
     }
     scored.sort((a, b) => b.finalScore - a.finalScore);
 
@@ -1673,6 +1714,7 @@
       reasons: best.reasons,
       score: best.finalScore,
       semantic: best.semantic,
+      markReviewed: confidence >= 0.72 && best.finalScore >= 92,
     };
   }
 
@@ -1759,7 +1801,7 @@
 
         const item = targets[i];
         setAiStatus(
-          '자동검수 ' + (i + 1) + '/' + targets.length +
+          '자동검수(고속) ' + (i + 1) + '/' + targets.length +
           ' · 수정 ' + changed + '개 · 보류 ' + unresolved.length + '개',
           true
         );
@@ -1767,14 +1809,15 @@
         const result = await reviewOneTranslation(item.source, item.translated);
         reviewedCount += 1;
 
-        // 확신이 낮으면 자동 교체하지 않는다.
-        if (result.changed && result.confidence >= 0.58) {
+        // 확신이 충분한 결과는 변경 여부와 무관하게 qa-reviewed로 표시한다.
+        // 다음 QA 실행에서 같은 항목을 다시 검사하지 않게 해 전체 속도를 높인다.
+        if (result.confidence >= 0.58 && (result.changed || result.markReviewed)) {
           await cachePutMany([{
             source: result.source,
             translated: result.after,
             method: 'qa-reviewed',
           }], 'qa-reviewed');
-          changed += 1;
+          if (result.changed) changed += 1;
         } else if ((result.score || 0) < 105 || result.confidence < 0.58) {
           unresolved.push({
             source: result.source,
